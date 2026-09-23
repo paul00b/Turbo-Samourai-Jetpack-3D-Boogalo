@@ -2,7 +2,7 @@
  * Scénario d'inputs scripté + hash final : sert au test Vitest ET au bouton "auto-test déterminisme"
  * du panneau de debug (à lancer dans Chrome, Firefox et Safari : le hash doit être identique).
  */
-import { AIM_UP, BTN_GRAB, BTN_HOOK_L, BTN_HOOK_R, BTN_JET, BTN_LEFT, BTN_RIGHT, makeInput, type PlayerInput } from './input';
+import { AIM_UP, BTN_GRAB, BTN_HOOK_L, BTN_HOOK_R, BTN_JET, BTN_LEFT, BTN_REEL, BTN_RIGHT, makeInput, type PlayerInput } from './input';
 import { mulberry32Next, mulberry32Value } from './rng';
 import { createInitialState, type GameState } from './state';
 import { step } from './step';
@@ -25,6 +25,7 @@ export function scriptedInputs(tick: number, seed: number, out: PlayerInput[]): 
     if ((block & 2) !== 0 && r1 > 0.2) b |= BTN_HOOK_R;
     if ((block & 4) !== 0 || r2 > 0.85) b |= BTN_JET;
     if ((block % 5) === 0) b |= BTN_GRAB;
+    if ((block & 8) !== 0) b |= BTN_REEL;
     if ((block % 3) === 0) b |= BTN_LEFT;
     if ((block % 3) === 1) b |= BTN_RIGHT;
     // Visée : balayage lent + bruit, principalement vers le haut.

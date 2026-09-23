@@ -9,6 +9,7 @@ export const BTN_JET = 1 << 2;
 export const BTN_GRAB = 1 << 3;
 export const BTN_LEFT = 1 << 4;
 export const BTN_RIGHT = 1 << 5;
+export const BTN_REEL = 1 << 6;
 
 export interface PlayerInput {
   /** Bitfield u16 (BTN_*). */

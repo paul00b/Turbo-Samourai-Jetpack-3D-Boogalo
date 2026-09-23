@@ -9,6 +9,7 @@ import {
   BTN_HOOK_R,
   BTN_JET,
   BTN_LEFT,
+  BTN_REEL,
   BTN_RIGHT,
   makeInput,
   type GameState,
@@ -90,6 +91,7 @@ export class InputMapper {
     let b = 0;
     if (k.isActive(kb.hookL)) b |= BTN_HOOK_L;
     if (k.isActive(kb.hookR)) b |= BTN_HOOK_R;
+    if (k.isActive(kb.reel)) b |= BTN_REEL;
     if (k.isActive(kb.jet)) b |= BTN_JET;
     if (k.isActive(kb.grab)) b |= BTN_GRAB;
     if (k.isDown(kb.left)) b |= BTN_LEFT;
@@ -115,6 +117,7 @@ export class InputMapper {
     let b = 0;
     if (g.isActive(pad, gb.hookL)) b |= BTN_HOOK_L;
     if (g.isActive(pad, gb.hookR)) b |= BTN_HOOK_R;
+    if (g.isDown(pad, gb.reel)) b |= BTN_REEL;
     if (g.isActive(pad, gb.jet)) b |= BTN_JET;
     if (g.isActive(pad, gb.grab)) b |= BTN_GRAB;
     if (g.isDown(pad, gb.left)) b |= BTN_LEFT;

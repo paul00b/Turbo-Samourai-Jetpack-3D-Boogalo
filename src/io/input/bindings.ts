@@ -4,15 +4,16 @@
  * Manette : bouton (index) ou axe (index + signe), sur le mapping "standard" du W3C quand il existe.
  */
 
-export type Action = 'hookL' | 'hookR' | 'jet' | 'grab' | 'left' | 'right' | 'pause';
+export type Action = 'hookL' | 'hookR' | 'reel' | 'jet' | 'grab' | 'left' | 'right' | 'pause';
 
 export const ACTIONS: readonly { id: Action; label: string; hint: string }[] = [
-  { id: 'hookL', label: 'Grappin gauche', hint: 'maintien = reel, second appui = détache' },
-  { id: 'hookR', label: 'Grappin droit', hint: 'maintien = reel, second appui = détache' },
+  { id: 'hookL', label: 'Grappin gauche', hint: 'maintenir = rester accroché, relâcher = lâcher' },
+  { id: 'hookR', label: 'Grappin droit', hint: 'maintenir = rester accroché, relâcher = lâcher' },
+  { id: 'reel', label: 'Reel (rétracter)', hint: 'rétracte toutes les cordes accrochées' },
   { id: 'jet', label: 'Jetpack', hint: 'orienté vers le curseur / stick droit' },
   { id: 'grab', label: 'Grab / cut manuel', hint: '' },
-  { id: 'left', label: 'Marche gauche', hint: '' },
-  { id: 'right', label: 'Marche droite', hint: '' },
+  { id: 'left', label: 'Marche / balancier gauche', hint: 'au sol : marche ; suspendu : pompe le balancier' },
+  { id: 'right', label: 'Marche / balancier droite', hint: 'au sol : marche ; suspendu : pompe le balancier' },
   { id: 'pause', label: 'Pause', hint: '' },
 ];
 
@@ -25,6 +26,7 @@ export type GamepadBindings = Record<Action, GamepadControl[]>;
 export const DEFAULT_KEYBOARD: KeyboardBindings = {
   hookL: ['Mouse0'],
   hookR: ['Mouse2'],
+  reel: ['KeyW', 'ArrowUp'], // Z sur AZERTY
   jet: ['Space', 'ShiftLeft'],
   grab: ['KeyE'],
   left: ['KeyA'], // Q sur AZERTY
@@ -36,6 +38,7 @@ export const DEFAULT_KEYBOARD: KeyboardBindings = {
 export const DEFAULT_GAMEPAD: GamepadBindings = {
   hookL: [{ type: 'button', index: 4 }],
   hookR: [{ type: 'button', index: 5 }],
+  reel: [{ type: 'axis', index: 1, sign: -1 }, { type: 'button', index: 12 }],
   jet: [{ type: 'button', index: 7 }],
   grab: [{ type: 'button', index: 0 }, { type: 'button', index: 2 }],
   left: [{ type: 'axis', index: 0, sign: -1 }, { type: 'button', index: 14 }],

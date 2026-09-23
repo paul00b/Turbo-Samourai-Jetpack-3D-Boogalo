@@ -11,7 +11,7 @@
  *        vitesse dérivée des positions -> collisions tuiles (mort par vitesse / pics) -> ennemis
  *   3. ennemis (patrouille, respawn), fenêtres de cut manuel, invulnérabilité
  */
-import { BTN_GRAB, BTN_HOOK_L, BTN_HOOK_R, BTN_JET, BTN_LEFT, BTN_RIGHT, makeInput, type PlayerInput } from './input';
+import { BTN_GRAB, BTN_HOOK_L, BTN_HOOK_R, BTN_JET, BTN_LEFT, BTN_REEL, BTN_RIGHT, makeInput, type PlayerInput } from './input';
 import { approach, dirFromAngle16, length, raySegmentCircle, vec2 } from './math';
 import {
   getLevel,
@@ -113,26 +113,32 @@ function updateControls(state: GameState, i: number, input: PlayerInput, events:
 
   if (pressed & BTN_GRAB) pl.cutPressTick = state.tick;
 
+  const reelHeld = (buttons & BTN_REEL) !== 0;
   for (let hIdx = 0; hIdx < 2; hIdx++) {
     const bit = hIdx === 0 ? BTN_HOOK_L : BTN_HOOK_R;
     const hook = pl.hooks[hIdx];
     const down = (buttons & bit) !== 0;
     const edge = (pressed & bit) !== 0;
     hook.reelDelta = 0;
-    if (hook.state === HOOK_IDLE) {
-      if (edge) fireHook(state, i, hIdx, events);
-    } else if (hook.state === HOOK_ATTACHED) {
-      if (edge) {
+    if (p.holdToAttach) {
+      // Mode "maintenir = accroché" : relâcher lâche (ou annule le tir en vol). Le reel a sa propre touche.
+      if (hook.state === HOOK_IDLE) {
+        if (edge) fireHook(state, i, hIdx, events);
+      } else if (!down) {
         detachHook(state, i, hIdx, events);
-      } else {
-        const reeling = down ? 1 : 0;
-        if (reeling !== hook.reeling) {
-          hook.reeling = reeling;
-          emit(events, state, reeling ? 'reelStart' : 'reelStop', i, pl.x, pl.y, { hook: hIdx });
-        }
+      } else if (hook.state === HOOK_ATTACHED) {
+        setReeling(state, i, hIdx, reelHeld, events);
       }
+    } else {
+      // Mode spec d'origine : maintien = reel, relâcher garde la corde, second appui = lâcher.
+      if (hook.state === HOOK_IDLE) {
+        if (edge) fireHook(state, i, hIdx, events);
+      } else if (hook.state === HOOK_ATTACHED) {
+        if (edge) detachHook(state, i, hIdx, events);
+        else setReeling(state, i, hIdx, down || reelHeld, events);
+      }
+      // HOOK_FLYING : on attend l'issue du vol.
     }
-    // HOOK_FLYING : on attend l'issue du vol.
   }
 
   // Jetpack + chauffe
@@ -152,6 +158,19 @@ function updateControls(state: GameState, i: number, input: PlayerInput, events:
   if (!thrust) pl.heat = Math.max(0, pl.heat - p.coolRate * DT);
   if (thrust !== pl.jetThrust) emit(events, state, thrust ? 'jetStart' : 'jetStop', i, pl.x, pl.y);
   pl.jetThrust = thrust;
+}
+
+function setReeling(state: GameState, i: number, hIdx: number, reeling: boolean, events: SimEvent[]): void {
+  const pl = state.players[i];
+  const hook = pl.hooks[hIdx];
+  const r = reeling ? 1 : 0;
+  if (r === hook.reeling) return;
+  hook.reeling = r;
+  emit(events, state, r ? 'reelStart' : 'reelStop', i, pl.x, pl.y, { hook: hIdx });
+}
+
+function anyHookAttached(pl: PlayerState): boolean {
+  return pl.hooks[0].state === HOOK_ATTACHED || pl.hooks[1].state === HOOK_ATTACHED;
 }
 
 function fireHook(state: GameState, i: number, hIdx: number, events: SimEvent[]): void {
@@ -204,6 +223,9 @@ function integratePlayer(state: GameState, i: number, h: number): void {
     const fr = Math.max(0, 1 - p.groundFriction * h);
     pl.vx *= fr;
     if (pl.walkDir !== 0) pl.vx = approach(pl.vx, pl.walkDir * p.walkSpeed, p.walkAccel * h);
+  } else if (pl.walkDir !== 0 && anyHookAttached(pl)) {
+    // Pompage du balancier : suspendu, gauche/droite pousse horizontalement.
+    pl.vx += pl.walkDir * p.swingForce * h;
   }
 
   const drag = Math.max(0, 1 - p.airDrag * h);

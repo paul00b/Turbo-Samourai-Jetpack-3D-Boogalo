@@ -31,6 +31,10 @@ src/app      Orchestration : Game (le seul endroit où les couches se touchent) 
   chacun `constraintIterations` passes Gauss-Seidel sur les cordes (PBD, contrainte d'inégalité : la corde
   retient, ne pousse jamais). Vitesse dérivée des positions, collisions cercle/tuiles avec mort au-dessus
   du seuil, pics, ennemis, respawn instantané dans le même tick.
+- **Grappin** : par défaut on reste accroché tant que le bouton est maintenu et relâcher lâche (`holdToAttach`).
+  Le reel est une touche dédiée qui rétracte toutes les cordes accrochées. Suspendu, gauche/droite pompe le
+  balancier (`swingForce`). Le toggle `holdToAttach` à 0 rend le comportement de la spec d'origine
+  (maintien = reel, relâcher garde la corde, second appui = lâcher) pour comparer.
 - **Inputs** (`src/sim/input.ts`) : `{ buttons: u16 bitfield, aim: u16 }`. L'angle de visée est quantifié sur
   16 bits ; la sim ne voit jamais une coordonnée souris. `packInput()` tient dans un u32.
 - **Paramètres** (`src/sim/params.ts`) : tous numériques, **dans l'état** (`state.params`). La sim ne dépend
@@ -59,7 +63,7 @@ src/app      Orchestration : Game (le seul endroit où les couches se touchent) 
 5. Aucune valeur ne dépend du deltaTime réel : le loop ne fait qu'appeler `step` N fois.
 
 Vérification cross-navigateur : bouton **Auto-test 1000 ticks** du panneau de debug. Il rejoue un
-scénario scripté et affiche un hash. Le hash de référence est `e507ca5e` (test `empreinte de référence`,
+scénario scripté et affiche un hash. Le hash de référence est `4a8ef524` (test `empreinte de référence`,
 identique sous Node/V8 et dans Chromium). Lance-le dans Firefox et Safari : il doit être identique. Si tu
 modifies la physique, mets à jour `GOLDEN_HASH` dans `test/determinism.test.ts` dans le même commit.
 
@@ -70,10 +74,11 @@ Coût mesuré : ~7 µs par tick pour 2 joueurs (4 sous-pas × 6 itérations) sou
 
 | Action | Clavier / souris (défaut) | Manette (mapping standard) |
 |---|---|---|
-| Grappin gauche (maintien = reel, second appui = détache) | Clic gauche | LB / L1 |
+| Grappin gauche (maintenir = accroché, relâcher = lâcher) | Clic gauche | LB / L1 |
 | Grappin droit | Clic droit | RB / R1 |
+| Reel : rétracte toutes les cordes accrochées | Z (touche physique W) ou flèche haut | Stick gauche vers le haut, croix haut |
 | Jetpack (orienté vers le curseur / stick droit) | Espace ou Maj gauche | RT / R2 |
-| Marche (ridiculement lente) | Q / D (touches physiques A/D, donc Q/D sur AZERTY) | Stick gauche, croix |
+| Marche (ridiculement lente) ; suspendu : pompe le balancier | Q / D (touches physiques A/D, donc Q/D sur AZERTY) | Stick gauche, croix |
 | Grab / cut manuel | E | A / ✕ (ou X / □) |
 | Pause | Échap | Start / Options |
 
@@ -98,13 +103,13 @@ Raccourcis debug : **F1** panneau, **F2** mode caméra, **F3** hitboxes, **F4** 
 
 ## Panneau de debug
 
-Sliders + champ numérique pour : gravité, vitesse de marche, vitesse du projectile de grappin, longueur max,
+Sliders + champ numérique pour : gravité, vitesse de marche, vitesse du projectile de grappin, longueur max (1000 px par défaut : depuis le sol du hall, la rangée d'ancrages du bas est atteignable),
 vitesse de reel, raideur de corde, amortissement du pendule, force du jetpack, chauffe, refroidissement,
 friction de l'air, vitesse max, seuil de mort au mur, seuil de kill d'ennemi, masse, sous-itérations de
-contrainte, sous-pas d'intégration, et quelques extras (conservation du moment angulaire au reel,
+contrainte, sous-pas d'intégration, et quelques extras (pompage du balancier, conservation du moment angulaire au reel,
 longueur mini de corde, friction au sol, PV, fenêtres du cut manuel, respawn ennemi).
 
-Toggles : ennemis, ennemis létaux, cut auto/manuel, 1/2 joueurs, mode caméra, hitboxes, vecteurs, trail.
+Toggles : ennemis, ennemis létaux, cut auto/manuel, maintien = accroché, 1/2 joueurs, mode caméra, hitboxes, vecteurs, trail.
 
 Persistance localStorage (`tsj.params.v1`, `tsj.settings.v1`). **Exporter JSON** télécharge et copie une
 config complète (params + seed + options de rendu), **Importer JSON** l'applique. Les params

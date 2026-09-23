@@ -11,6 +11,8 @@ export interface SimParams {
   groundFriction: number;
   hookSpeed: number;
   hookMaxLength: number;
+  holdToAttach: number;
+  swingForce: number;
   reelSpeed: number;
   ropeStiffness: number;
   ropeDamping: number;
@@ -45,7 +47,7 @@ export const DEFAULT_PARAMS: Readonly<SimParams> = Object.freeze({
   walkAccel: 300,
   groundFriction: 6,
   hookSpeed: 30000,
-  hookMaxLength: 440,
+  hookMaxLength: 1000,
   reelSpeed: 520,
   ropeStiffness: 1,
   ropeDamping: 0.04,
@@ -72,6 +74,8 @@ export const DEFAULT_PARAMS: Readonly<SimParams> = Object.freeze({
   enemiesEnabled: 1,
   enemyLethal: 0,
   manualCut: 0,
+  holdToAttach: 1,
+  swingForce: 700,
 });
 
 /** Ordre canonique des champs : utilisé par la sérialisation binaire. NE PAS réordonner sans bump de version. */
@@ -104,7 +108,8 @@ export const PARAM_META: readonly ParamMeta[] = [
   { key: 'playerRadius', label: 'Rayon du personnage', min: 4, max: 24, step: 0.5, group: 'Mouvement', unit: 'px' },
 
   { key: 'hookSpeed', label: 'Vitesse du projectile', min: 500, max: 40000, step: 100, group: 'Grappin', unit: 'px/s', hint: '30000 = quasi instantané.' },
-  { key: 'hookMaxLength', label: 'Longueur max', min: 50, max: 1600, step: 8, group: 'Grappin', unit: 'px' },
+  { key: 'hookMaxLength', label: 'Longueur max', min: 50, max: 2400, step: 8, group: 'Grappin', unit: 'px', hint: '1000 = depuis le sol du hall, la rangée d\'ancrages du bas (row 18) est atteignable.' },
+  { key: 'swingForce', label: 'Pompage du balancier (gauche/droite)', min: 0, max: 3000, step: 10, group: 'Grappin', unit: 'px/s²', hint: 'Accélération horizontale quand on est suspendu et qu\'on appuie gauche/droite.' },
   { key: 'reelSpeed', label: 'Vitesse de reel', min: 0, max: 2500, step: 10, group: 'Grappin', unit: 'px/s' },
   { key: 'ropeStiffness', label: 'Raideur de la corde', min: 0.05, max: 1, step: 0.01, group: 'Grappin', hint: '1 = rigide. Fraction de correction par itération.' },
   { key: 'ropeDamping', label: 'Amortissement pendule', min: 0, max: 3, step: 0.01, group: 'Grappin', unit: '/s' },
@@ -141,6 +146,7 @@ export const PARAM_TOGGLES: readonly ToggleMeta[] = [
   { key: 'enemiesEnabled', label: 'Ennemis' },
   { key: 'enemyLethal', label: 'Ennemis létaux (sinon repoussée + dégâts)' },
   { key: 'manualCut', label: 'Cut manuel (appui requis au contact)' },
+  { key: 'holdToAttach', label: 'Grappin : maintenir = accroché, relâcher = lâcher (sinon : maintenir = reel, second appui = lâcher)' },
 ];
 
 export function cloneParams(p: Readonly<SimParams>): SimParams {

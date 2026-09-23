@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   BTN_HOOK_L,
   BTN_JET,
+  BTN_REEL,
+  BTN_RIGHT,
   AIM_UP,
   createInitialState,
   DEFAULT_PARAMS,
@@ -53,14 +55,15 @@ describe('physique de base', () => {
     const ev: SimEvent[] = [];
     const before = { x: p.x, y: p.y };
     run(s, [makeInput(BTN_HOOK_L, AIM_UP)], 1, ev);
+    // Mode par défaut : on reste accroché tant que le bouton est maintenu.
     expect(ev.some((e) => e.type === 'hookFire')).toBe(true);
     expect(ev.some((e) => e.type === 'hookHit')).toBe(true);
     const hook = p.hooks[0];
     expect(hook.state).toBe(HOOK_ATTACHED);
     expect(hook.y).toBeLessThan(before.y);
     const L = hook.length;
-    // Relâcher (pas de reel) : pendule. Vérifie la contrainte pendant 3 s.
-    const inputs = [makeInput(0, AIM_UP)];
+    // Maintien sans reel : pendule. Vérifie la contrainte pendant 3 s.
+    const inputs = [makeInput(BTN_HOOK_L, AIM_UP)];
     for (let t = 0; t < 180; t++) {
       step(s, inputs, ev);
       const d = Math.hypot(p.x - hook.x, p.y - hook.y);
@@ -69,8 +72,39 @@ describe('physique de base', () => {
     expect(hook.state).toBe(HOOK_ATTACHED);
   });
 
-  it('maintenir = reel : la corde raccourcit à vitesse constante ; relâcher stoppe ; un second appui détache', () => {
+  it('mode par défaut : relâcher le bouton lâche le grappin ; la touche reel rétracte', () => {
     const s = createInitialState(1, 1);
+    const p = s.players[0];
+    place(s, UNDER_PLATFORM.tx, UNDER_PLATFORM.ty);
+    const ev: SimEvent[] = [];
+    run(s, [makeInput(BTN_HOOK_L, AIM_UP)], 1, ev);
+    expect(p.hooks[0].state).toBe(HOOK_ATTACHED);
+    const L0 = p.hooks[0].length;
+    run(s, [makeInput(BTN_HOOK_L, AIM_UP)], 10, ev);
+    expect(p.hooks[0].length).toBeCloseTo(L0, 6); // maintien seul : pas de reel
+    run(s, [makeInput(BTN_HOOK_L | BTN_REEL, AIM_UP)], 15, ev); // + reel pendant 0.25 s
+    expect(ev.some((e) => e.type === 'reelStart')).toBe(true);
+    expect(L0 - p.hooks[0].length).toBeCloseTo(DEFAULT_PARAMS.reelSpeed * 0.25, 0);
+    run(s, [makeInput(0, AIM_UP)], 1, ev); // relâche : lâche
+    expect(p.hooks[0].state).not.toBe(HOOK_ATTACHED);
+    expect(ev.some((e) => e.type === 'hookDetach')).toBe(true);
+  });
+
+  it('suspendu, gauche/droite pompe le balancier (au sol, ça marche à peine)', () => {
+    const s = createInitialState(1, 1);
+    const p = s.players[0];
+    place(s, UNDER_PLATFORM.tx, UNDER_PLATFORM.ty);
+    run(s, [makeInput(BTN_HOOK_L, AIM_UP)], 1);
+    run(s, [makeInput(BTN_HOOK_L | BTN_RIGHT, AIM_UP)], 30);
+    expect(p.vx).toBeGreaterThan(150);
+    const grounded = createInitialState(1, 1);
+    run(grounded, [makeInput(BTN_RIGHT)], 60);
+    expect(grounded.players[0].vx).toBeLessThanOrEqual(DEFAULT_PARAMS.walkSpeed + 1);
+  });
+
+  it('mode spec d\'origine (holdToAttach=0) : maintenir = reel, relâcher stoppe, second appui détache', () => {
+    const s = createInitialState(1, 1);
+    s.params.holdToAttach = 0;
     const p = s.players[0];
     place(s, UNDER_PLATFORM.tx, UNDER_PLATFORM.ty);
     const ev: SimEvent[] = [];
