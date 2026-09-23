@@ -67,4 +67,4 @@ describe('déterminisme de la simulation', () => {
   });
 });
 
-export const GOLDEN_HASH = '8026d6f9';
+export const GOLDEN_HASH = 'e507ca5e';

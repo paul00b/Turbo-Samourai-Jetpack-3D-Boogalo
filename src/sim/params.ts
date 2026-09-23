@@ -57,7 +57,7 @@ export const DEFAULT_PARAMS: Readonly<SimParams> = Object.freeze({
   overheatResume: 0.35,
   airDrag: 0.06,
   maxSpeed: 2600,
-  wallDeathSpeed: 850,
+  wallDeathSpeed: 1000,
   enemyKillSpeed: 450,
   enemyKnockback: 520,
   playerMass: 1,
@@ -116,7 +116,7 @@ export const PARAM_META: readonly ParamMeta[] = [
   { key: 'coolRate', label: 'Vitesse de refroidissement', min: 0, max: 3, step: 0.01, group: 'Jetpack', unit: '/s' },
   { key: 'overheatResume', label: 'Seuil de reprise après surchauffe', min: 0, max: 0.95, step: 0.01, group: 'Jetpack' },
 
-  { key: 'wallDeathSpeed', label: 'Seuil de mort au mur', min: 50, max: 5000, step: 10, group: 'Mort', unit: 'px/s', hint: 'Composante normale de la vitesse à l\'impact.' },
+  { key: 'wallDeathSpeed', label: 'Seuil de mort au mur', min: 50, max: 5000, step: 10, group: 'Mort', unit: 'px/s', hint: 'Composante normale de la vitesse à l\'impact. 1000 = chute libre de ~8,7 tuiles.' },
   { key: 'maxHp', label: 'Points de vie', min: 1, max: 20, step: 1, group: 'Mort', integer: true },
   { key: 'invulnTicks', label: 'Invulnérabilité après coup', min: 0, max: 300, step: 1, group: 'Mort', unit: 'ticks', integer: true },
 
