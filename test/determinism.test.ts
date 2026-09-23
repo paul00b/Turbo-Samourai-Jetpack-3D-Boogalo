@@ -50,6 +50,15 @@ describe('déterminisme de la simulation', () => {
     expect(hashState(s1)).toBe(hashState(s2));
   });
 
+  it('coût d\'un tick (info : marge pour la re-simulation en rollback)', () => {
+    const t0 = performance.now();
+    const r = runDeterminismSelfTest(3000, 99);
+    const us = ((performance.now() - t0) * 1000) / r.ticks;
+    // eslint-disable-next-line no-console
+    console.log(`sim : ${us.toFixed(1)} µs/tick (2 joueurs, ${r.finalState.params.substeps} sous-pas × ${r.finalState.params.constraintIterations} itérations)`);
+    expect(us).toBeLessThan(2000);
+  });
+
   it('empreinte de référence (à mettre à jour volontairement si la physique change)', () => {
     const r = runDeterminismSelfTest(1000, 1234, DEFAULT_PARAMS, 2);
     // Si ce test casse alors que tu n'as pas touché à la physique : c'est un problème de déterminisme.
