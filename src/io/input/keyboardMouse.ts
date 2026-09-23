@@ -5,7 +5,7 @@
 export class KeyboardMouse {
   readonly down = new Set<string>();
   private readonly latch = new Set<string>();
-  /** Codes pressés (front) depuis le dernier drain — pour les menus et le remapping. */
+  /** Codes pressés (front) depuis le dernier drain : pour les menus et le remapping. */
   private readonly pressedQueue: string[] = [];
   mouseX = 0;
   mouseY = 0;

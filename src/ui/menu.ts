@@ -270,7 +270,7 @@ export class Menu {
     for (const a of ACTIONS) {
       const slots: HTMLElement[] = [];
       for (let slot = 0; slot < 2; slot++) {
-        let label = '—';
+        let label = '-';
         if (this.controlsTab === 'kbm') {
           const code = s.keyboard[a.id][slot];
           if (code) label = keyCodeLabel(code, this.layoutMap);
@@ -280,7 +280,7 @@ export class Menu {
         }
         const b = this.btn(label, () => this.beginCapture(a.id, slot, b), { class: 'menu-btn slot' });
         slots.push(b);
-        if (label !== '—') {
+        if (label !== '-') {
           slots.push(
             this.btn('×', () => {
               this.deps.settings.update((st) => {

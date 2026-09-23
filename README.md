@@ -1,4 +1,4 @@
-# Turbo Samouraï Jetpack — prototype V1
+# Turbo Samouraï Jetpack : prototype V1
 
 Jeu 2D de mouvement basé sur la physique : un personnage qui marche à peine (tongs), deux grappins
 indépendants et un jetpack orientable. La vitesse est l'outil principal et la cause de mort principale.
