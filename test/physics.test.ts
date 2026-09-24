@@ -32,8 +32,9 @@ function place(state: ReturnType<typeof createInitialState>, tx: number, ty: num
   p.vy = 0;
 }
 
-// La plateforme (34..38, 31) de la zone A : un joueur placé en (36, 40) a 9 tuiles de vide au-dessus.
-const UNDER_PLATFORM = { tx: 36, ty: 40 };
+// Map 0 (facile) : ancrage en (41..43, 20), sol en 30. Debout en (42, 29), on a 9 tuiles de vide au-dessus.
+const UNDER_ANCHOR = { tx: 42, ty: 29 };
+const ANCHOR_ROW = 20;
 
 describe('physique de base', () => {
   it('le joueur spawn sur du sol et tombe/se pose sans mourir', () => {
@@ -47,11 +48,11 @@ describe('physique de base', () => {
     expect(ev.filter((e) => e.type === 'death')).toHaveLength(0);
   });
 
-  it('le grappin s\'accroche au plafond, la corde ne s\'allonge jamais au-delà de sa longueur', () => {
+  it('le grappin s\'accroche à l\'ancrage, la corde ne s\'allonge jamais au-delà de sa longueur', () => {
     const s = createInitialState(1, 1);
     const p = s.players[0];
-    place(s, UNDER_PLATFORM.tx, UNDER_PLATFORM.ty);
-    expect(tileAt(getLevel(0), UNDER_PLATFORM.tx, 31)).toBe(T_SOLID);
+    place(s, UNDER_ANCHOR.tx, UNDER_ANCHOR.ty);
+    expect(tileAt(getLevel(0), UNDER_ANCHOR.tx, ANCHOR_ROW)).toBe(T_SOLID);
     const ev: SimEvent[] = [];
     const before = { x: p.x, y: p.y };
     run(s, [makeInput(BTN_HOOK_L, AIM_UP)], 1, ev);
@@ -62,7 +63,7 @@ describe('physique de base', () => {
     expect(hook.state).toBe(HOOK_ATTACHED);
     expect(hook.y).toBeLessThan(before.y);
     const L = hook.length;
-    // Maintien sans reel : pendule. Vérifie la contrainte pendant 3 s.
+    // Maintien : la corde se rétracte jusqu'à minRopeLength puis on pendule. Contrainte vérifiée pendant 3 s.
     const inputs = [makeInput(BTN_HOOK_L, AIM_UP)];
     for (let t = 0; t < 180; t++) {
       step(s, inputs, ev);
@@ -72,19 +73,21 @@ describe('physique de base', () => {
     expect(hook.state).toBe(HOOK_ATTACHED);
   });
 
-  it('mode par défaut : relâcher le bouton lâche le grappin ; la touche reel rétracte', () => {
+  it('mode par défaut : maintenir rétracte automatiquement, relâcher lâche le grappin', () => {
     const s = createInitialState(1, 1);
     const p = s.players[0];
-    place(s, UNDER_PLATFORM.tx, UNDER_PLATFORM.ty);
+    place(s, UNDER_ANCHOR.tx, UNDER_ANCHOR.ty);
     const ev: SimEvent[] = [];
     run(s, [makeInput(BTN_HOOK_L, AIM_UP)], 1, ev);
     expect(p.hooks[0].state).toBe(HOOK_ATTACHED);
     const L0 = p.hooks[0].length;
-    run(s, [makeInput(BTN_HOOK_L, AIM_UP)], 10, ev);
-    expect(p.hooks[0].length).toBeCloseTo(L0, 6); // maintien seul : pas de reel
-    run(s, [makeInput(BTN_HOOK_L | BTN_REEL, AIM_UP)], 15, ev); // + reel pendant 0.25 s
+    run(s, [makeInput(BTN_HOOK_L, AIM_UP)], 15, ev); // maintien seul : reel auto pendant 0.25 s
     expect(ev.some((e) => e.type === 'reelStart')).toBe(true);
     expect(L0 - p.hooks[0].length).toBeCloseTo(DEFAULT_PARAMS.reelSpeed * 0.25, 0);
+    // La touche reel dédiée ne change rien de plus dans ce mode.
+    const L1 = p.hooks[0].length;
+    run(s, [makeInput(BTN_HOOK_L | BTN_REEL, AIM_UP)], 6, ev);
+    expect(L1 - p.hooks[0].length).toBeCloseTo(DEFAULT_PARAMS.reelSpeed * 0.1, 0);
     run(s, [makeInput(0, AIM_UP)], 1, ev); // relâche : lâche
     expect(p.hooks[0].state).not.toBe(HOOK_ATTACHED);
     expect(ev.some((e) => e.type === 'hookDetach')).toBe(true);
@@ -92,8 +95,9 @@ describe('physique de base', () => {
 
   it('suspendu, gauche/droite pompe le balancier (au sol, ça marche à peine)', () => {
     const s = createInitialState(1, 1);
+    s.params.reelSpeed = 0; // pendule à longueur fixe : on mesure swingForce, pas la rétraction auto
     const p = s.players[0];
-    place(s, UNDER_PLATFORM.tx, UNDER_PLATFORM.ty);
+    place(s, UNDER_ANCHOR.tx, UNDER_ANCHOR.ty);
     run(s, [makeInput(BTN_HOOK_L, AIM_UP)], 1);
     run(s, [makeInput(BTN_HOOK_L | BTN_RIGHT, AIM_UP)], 30);
     expect(p.vx).toBeGreaterThan(150);
@@ -106,7 +110,7 @@ describe('physique de base', () => {
     const s = createInitialState(1, 1);
     s.params.holdToAttach = 0;
     const p = s.players[0];
-    place(s, UNDER_PLATFORM.tx, UNDER_PLATFORM.ty);
+    place(s, UNDER_ANCHOR.tx, UNDER_ANCHOR.ty);
     const ev: SimEvent[] = [];
     run(s, [makeInput(BTN_HOOK_L, AIM_UP)], 1, ev); // tir (front)
     const L0 = p.hooks[0].length;
@@ -172,6 +176,8 @@ describe('physique de base', () => {
     s.params.gravity = 0;
     const p = s.players[0];
     const e = s.enemies[0];
+    e.patrol = 0; // on teste le seuil de kill, pas la patrouille
+    e.speed = 0;
     p.x = e.x - 60;
     p.y = e.y;
     p.vx = DEFAULT_PARAMS.enemyKillSpeed + 200;
@@ -184,6 +190,8 @@ describe('physique de base', () => {
     s2.params.gravity = 0;
     const p2 = s2.players[0];
     const e2 = s2.enemies[0];
+    e2.patrol = 0;
+    e2.speed = 0;
     p2.x = e2.x - 60;
     p2.y = e2.y;
     p2.vx = 100;

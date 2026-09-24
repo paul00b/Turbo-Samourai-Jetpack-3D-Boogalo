@@ -1,5 +1,5 @@
 /** HUD permanent (DOM) : vitesse en gros, jauge de chauffe, chrono, FPS, TPS, PV, morts. */
-import { DT, type GameState } from '../sim';
+import { DT, getLevel, type GameState } from '../sim';
 import type { GameLoop } from '../app/gameLoop';
 import type { InputMapper } from '../io/input/inputMapper';
 import type { Settings } from '../io/settings';
@@ -12,6 +12,7 @@ interface PlayerBlock {
   heatLabel: HTMLElement;
   hp: HTMLElement;
   deaths: HTMLElement;
+  kills: HTMLElement;
   chrono: HTMLElement;
   cut: HTMLElement;
   device: HTMLElement;
@@ -21,23 +22,29 @@ export class Hud {
   private blocks: PlayerBlock[] = [];
   private readonly stats: HTMLElement;
   private readonly globalChrono: HTMLElement;
+  private readonly objective: HTMLElement;
+  private readonly complete: HTMLElement;
   private readonly message: HTMLElement;
   private readonly crosshair: HTMLElement;
   private lastTextUpdate = 0;
+  private bannerAllowed = true;
 
   constructor(private readonly root: HTMLElement) {
     clear(root);
     this.globalChrono = h('div', { class: 'hud-chrono', text: '00:00.00' });
+    this.objective = h('div', { class: 'hud-objective', text: '' });
+    this.complete = h('div', { class: 'hud-complete hidden' });
     this.stats = h('div', { class: 'hud-stats', text: '' });
     this.message = h('div', { class: 'hud-message hidden' });
     this.crosshair = h('div', { class: 'crosshair hidden' });
-    root.append(this.globalChrono, this.stats, this.message, this.crosshair);
+    root.append(this.globalChrono, this.objective, this.complete, this.stats, this.message, this.crosshair);
     for (let i = 0; i < 2; i++) {
       const speed = h('div', { class: 'hud-speed', text: '0' });
       const heatFill = h('div', { class: 'hud-heat-fill' });
       const heatLabel = h('div', { class: 'hud-heat-label', text: 'CHAUFFE' });
       const hp = h('div', { class: 'hud-hp', text: '' });
       const deaths = h('div', { class: 'hud-deaths', text: '' });
+      const kills = h('div', { class: 'hud-kills', text: '' });
       const chrono = h('div', { class: 'hud-run', text: '' });
       const cut = h('div', { class: 'hud-cut hidden', text: 'CUT !' });
       const device = h('div', { class: 'hud-device', text: '' });
@@ -47,16 +54,21 @@ export class Hud {
         h('div', { class: 'hud-title', text: `J${i + 1}` }, device),
         h('div', { class: 'hud-speed-row' }, speed, h('span', { class: 'hud-unit', text: 'px/s' })),
         h('div', { class: 'hud-heat' }, heatFill, heatLabel),
-        h('div', { class: 'hud-row' }, hp, deaths, chrono),
+        h('div', { class: 'hud-row' }, hp, deaths, kills, chrono),
         cut,
       );
       root.append(block);
-      this.blocks.push({ root: block, speed, heatFill, heatLabel, hp, deaths, chrono, cut, device });
+      this.blocks.push({ root: block, speed, heatFill, heatLabel, hp, deaths, kills, chrono, cut, device });
     }
   }
 
   setVisible(v: boolean): void {
     this.root.classList.toggle('hidden', !v);
+  }
+
+  /** La bannière de fin doublonne avec l'écran de fin : on ne la montre qu'en jeu. */
+  setBannerVisible(v: boolean): void {
+    this.bannerAllowed = v;
   }
 
   update(
@@ -91,6 +103,7 @@ export class Hud {
       for (let k = 0; k < state.params.maxHp; k++) hearts += k < pl.hp ? '♥' : '♡';
       b.hp.textContent = hearts;
       b.deaths.textContent = `☠ ${pl.deaths}`;
+      b.kills.textContent = `⚔ ${pl.kills}`;
       b.chrono.textContent = formatTime((state.tick - pl.spawnTick) * DT);
       const dev = settings.devices[i];
       const status = mapper.status(i);
@@ -99,7 +112,17 @@ export class Hud {
     }
 
     if (textTick) {
-      this.globalChrono.textContent = formatTime(state.tick * DT);
+      const runTicks = state.finished ? state.finishTick : state.tick;
+      this.globalChrono.textContent = formatTime(runTicks * DT);
+      this.globalChrono.classList.toggle('done', state.finished === 1);
+      this.objective.textContent = objectiveText(state);
+      this.complete.classList.toggle('hidden', state.finished !== 1 || !this.bannerAllowed);
+      if (state.finished) {
+        const race = getLevel(state.levelId).mode === 'race';
+        this.complete.textContent = race
+          ? `ARRIVÉE · ${formatTime(runTicks * DT)}`
+          : `NIVEAU TERMINÉ · ${state.kills} ennemi${state.kills > 1 ? 's' : ''} · ${formatTime(runTicks * DT)}`;
+      }
       this.stats.textContent = `${loop.fps} fps · ${loop.tps} ticks/s · rendu ${renderMs.toFixed(1)} ms · tick ${state.tick}`;
       let msg = '';
       for (let i = 0; i < state.playerCount; i++) {
@@ -112,6 +135,29 @@ export class Hud {
     this.crosshair.classList.toggle('hidden', !mouse.visible);
     if (mouse.visible) this.crosshair.style.transform = `translate(${mouse.x}px, ${mouse.y}px)`;
   }
+}
+
+/** Objectif courant : progression vers l'arrivée (chrono), ou stock d'ennemis (élimination). */
+export function objectiveText(state: GameState): string {
+  const level = getLevel(state.levelId);
+  if (level.mode === 'race') {
+    if (state.finished) return '🏁 arrivée franchie';
+    const goal = level.goal;
+    if (!goal) return '🏁 course';
+    const start = level.spawnX;
+    const end = goal.x + goal.w / 2;
+    let best = 0;
+    for (let i = 0; i < state.playerCount; i++) best = Math.max(best, state.players[i].x);
+    const span = end - start;
+    const pct = span <= 0 ? 100 : Math.max(0, Math.min(100, Math.round(((best - start) / span) * 100)));
+    return `🏁 ${pct} % · ${Math.max(0, Math.round((end - best) / 32))} tuiles restantes`;
+  }
+  if (!state.params.enemiesEnabled) return 'Ennemis désactivés';
+  if (state.params.enemiesUnlimited) return `⚔ ${state.kills} · ennemis illimités`;
+  const total = state.enemies.length;
+  if (total === 0) return '⚔ 0 · aucun ennemi sur cette carte';
+  const left = state.enemies.reduce((n, e) => n + (e.alive ? 1 : 0), 0);
+  return state.finished ? `⚔ ${state.kills} / ${total} · terminé` : `⚔ ${state.kills} / ${total} · ${left} restant${left > 1 ? 's' : ''}`;
 }
 
 export function formatTime(seconds: number): string {

@@ -40,6 +40,8 @@ export interface PlayerState {
   facing: number; // -1/1
   hp: number;
   deaths: number;
+  /** Ennemis tués par ce joueur depuis le début de la partie. */
+  kills: number;
   spawnTick: number;
   /** Incrémenté à chaque téléportation (respawn) : le rendu saute l'interpolation. */
   teleportSeq: number;
@@ -75,6 +77,12 @@ export interface GameState {
   params: SimParams;
   players: PlayerState[]; // toujours 2 entrées ; seules les `playerCount` premières sont simulées
   enemies: EnemyState[];
+  /** Ennemis tués, tous joueurs confondus (l'objectif du niveau est commun). */
+  kills: number;
+  /** 1 quand le stock fini d'ennemis est épuisé. Le chrono se fige alors sur `finishTick`. */
+  finished: number;
+  /** Tick d'achèvement, -1 tant que le niveau n'est pas terminé. */
+  finishTick: number;
 }
 
 export const MAX_PLAYERS = 2;
@@ -113,6 +121,7 @@ export function makePlayer(x: number, y: number, hp: number): PlayerState {
     facing: 1,
     hp,
     deaths: 0,
+    kills: 0,
     spawnTick: 0,
     teleportSeq: 0,
     cutPressTick: -1000,
@@ -162,6 +171,9 @@ export function createInitialState(
     params: p,
     players,
     enemies,
+    kills: 0,
+    finished: 0,
+    finishTick: -1,
   };
 }
 
@@ -188,5 +200,8 @@ export function cloneState(s: GameState): GameState {
     params: cloneParams(s.params),
     players: s.players.map(clonePlayer),
     enemies: s.enemies.map(cloneEnemy),
+    kills: s.kills,
+    finished: s.finished,
+    finishTick: s.finishTick,
   };
 }

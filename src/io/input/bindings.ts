@@ -7,9 +7,9 @@
 export type Action = 'hookL' | 'hookR' | 'reel' | 'jet' | 'grab' | 'left' | 'right' | 'pause';
 
 export const ACTIONS: readonly { id: Action; label: string; hint: string }[] = [
-  { id: 'hookL', label: 'Grappin gauche', hint: 'maintenir = rester accroché, relâcher = lâcher' },
-  { id: 'hookR', label: 'Grappin droit', hint: 'maintenir = rester accroché, relâcher = lâcher' },
-  { id: 'reel', label: 'Reel (rétracter)', hint: 'rétracte toutes les cordes accrochées' },
+  { id: 'hookL', label: 'Grappin gauche', hint: 'maintenir = accroché et rétraction auto, relâcher = lâcher' },
+  { id: 'hookR', label: 'Grappin droit', hint: 'maintenir = accroché et rétraction auto, relâcher = lâcher' },
+  { id: 'reel', label: 'Reel (rétracter)', hint: 'rétracte les cordes ; inutile tant que la rétraction auto est active' },
   { id: 'jet', label: 'Jetpack', hint: 'orienté vers le curseur / stick droit' },
   { id: 'grab', label: 'Grab / cut manuel', hint: '' },
   { id: 'left', label: 'Marche / balancier gauche', hint: 'au sol : marche ; suspendu : pompe le balancier' },

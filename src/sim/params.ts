@@ -38,6 +38,8 @@ export interface SimParams {
   enemyRespawnTicks: number;
   enemiesEnabled: number;
   enemyLethal: number;
+  /** 1 = les ennemis respawnent sans fin (score attack). 0 = stock fini, tuer tout termine le niveau. */
+  enemiesUnlimited: number;
   manualCut: number;
 }
 
@@ -47,7 +49,7 @@ export const DEFAULT_PARAMS: Readonly<SimParams> = Object.freeze({
   walkAccel: 300,
   groundFriction: 6,
   hookSpeed: 30000,
-  hookMaxLength: 1000,
+  hookMaxLength: 420,
   reelSpeed: 520,
   ropeStiffness: 1,
   ropeDamping: 0.04,
@@ -59,7 +61,7 @@ export const DEFAULT_PARAMS: Readonly<SimParams> = Object.freeze({
   overheatResume: 0.35,
   airDrag: 0.06,
   maxSpeed: 2600,
-  wallDeathSpeed: 1000,
+  wallDeathSpeed: 1800,
   enemyKillSpeed: 450,
   enemyKnockback: 520,
   playerMass: 1,
@@ -76,6 +78,7 @@ export const DEFAULT_PARAMS: Readonly<SimParams> = Object.freeze({
   manualCut: 0,
   holdToAttach: 1,
   swingForce: 700,
+  enemiesUnlimited: 0,
 });
 
 /** Ordre canonique des champs : utilisé par la sérialisation binaire. NE PAS réordonner sans bump de version. */
@@ -108,7 +111,7 @@ export const PARAM_META: readonly ParamMeta[] = [
   { key: 'playerRadius', label: 'Rayon du personnage', min: 4, max: 24, step: 0.5, group: 'Mouvement', unit: 'px' },
 
   { key: 'hookSpeed', label: 'Vitesse du projectile', min: 500, max: 40000, step: 100, group: 'Grappin', unit: 'px/s', hint: '30000 = quasi instantané.' },
-  { key: 'hookMaxLength', label: 'Longueur max', min: 50, max: 2400, step: 8, group: 'Grappin', unit: 'px', hint: '1000 = depuis le sol du hall, la rangée d\'ancrages du bas (row 18) est atteignable.' },
+  { key: 'hookMaxLength', label: 'Longueur max', min: 50, max: 2400, step: 8, group: 'Grappin', unit: 'px', hint: '420 = 13 tuiles : debout au sol, la rangée d\'ancrages du bas (10 tuiles) est atteignable sans sauter.' },
   { key: 'swingForce', label: 'Pompage du balancier (gauche/droite)', min: 0, max: 3000, step: 10, group: 'Grappin', unit: 'px/s²', hint: 'Accélération horizontale quand on est suspendu et qu\'on appuie gauche/droite.' },
   { key: 'reelSpeed', label: 'Vitesse de reel', min: 0, max: 2500, step: 10, group: 'Grappin', unit: 'px/s' },
   { key: 'ropeStiffness', label: 'Raideur de la corde', min: 0.05, max: 1, step: 0.01, group: 'Grappin', hint: '1 = rigide. Fraction de correction par itération.' },
@@ -121,7 +124,7 @@ export const PARAM_META: readonly ParamMeta[] = [
   { key: 'coolRate', label: 'Vitesse de refroidissement', min: 0, max: 3, step: 0.01, group: 'Jetpack', unit: '/s' },
   { key: 'overheatResume', label: 'Seuil de reprise après surchauffe', min: 0, max: 0.95, step: 0.01, group: 'Jetpack' },
 
-  { key: 'wallDeathSpeed', label: 'Seuil de mort au mur', min: 50, max: 5000, step: 10, group: 'Mort', unit: 'px/s', hint: 'Composante normale de la vitesse à l\'impact. 1000 = chute libre de ~8,7 tuiles.' },
+  { key: 'wallDeathSpeed', label: 'Seuil de mort au mur', min: 50, max: 5000, step: 10, group: 'Mort', unit: 'px/s', hint: 'Composante normale de la vitesse à l\'impact. 1800 = chute libre de ~28 tuiles : seuls les vrais murs à pleine vitesse tuent.' },
   { key: 'maxHp', label: 'Points de vie', min: 1, max: 20, step: 1, group: 'Mort', integer: true },
   { key: 'invulnTicks', label: 'Invulnérabilité après coup', min: 0, max: 300, step: 1, group: 'Mort', unit: 'ticks', integer: true },
 
@@ -145,8 +148,9 @@ export interface ToggleMeta {
 export const PARAM_TOGGLES: readonly ToggleMeta[] = [
   { key: 'enemiesEnabled', label: 'Ennemis' },
   { key: 'enemyLethal', label: 'Ennemis létaux (sinon repoussée + dégâts)' },
+  { key: 'enemiesUnlimited', label: 'Ennemis illimités', hint: 'Ils respawnent et le compteur monte sans fin. Décoché : stock fini, tuer tout le monde termine le niveau et fige le chrono.' },
   { key: 'manualCut', label: 'Cut manuel (appui requis au contact)' },
-  { key: 'holdToAttach', label: 'Grappin : maintenir = accroché, relâcher = lâcher (sinon : maintenir = reel, second appui = lâcher)' },
+  { key: 'holdToAttach', label: 'Grappin : maintenir = accroché + rétraction auto, relâcher = lâcher (sinon : maintenir = reel, second appui = lâcher)' },
 ];
 
 export function cloneParams(p: Readonly<SimParams>): SimParams {

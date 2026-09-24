@@ -13,12 +13,16 @@ import {
   type GamepadControl,
 } from '../io/input/bindings';
 import { GamepadCapture, type GamepadManager } from '../io/input/gamepad';
+import { DT, LEVEL_INFOS, LEVEL_MODE_LABEL, type LevelMode } from '../sim';
+import type { NetGame } from '../net/netGame';
+import { normalizeCode } from '../net/protocol';
 import type { KeyboardMouse } from '../io/input/keyboardMouse';
 import type { SettingsStore } from '../io/settings';
 import { clear, h } from './dom';
+import { formatTime } from './hud';
 import { FocusNav, MenuInput, type MenuAction } from './focusNav';
 
-export type ScreenId = 'title' | 'mode' | 'controls' | 'settings' | 'pause';
+export type ScreenId = 'title' | 'mode' | 'maps' | 'net' | 'controls' | 'settings' | 'pause' | 'complete';
 
 interface Capture {
   kind: 'kbm' | 'pad';
@@ -30,6 +34,7 @@ interface Capture {
 
 export interface MenuDeps {
   game: Game;
+  net: NetGame;
   settings: SettingsStore;
   kbm: KeyboardMouse;
   pads: GamepadManager;
@@ -86,6 +91,7 @@ export class Menu {
     this.stack.length = 0;
     if (p === 'menu') this.push('title');
     else if (p === 'paused') this.push('pause');
+    else if (p === 'complete') this.push('complete');
     else this.hideAll();
   }
 
@@ -107,6 +113,7 @@ export class Menu {
     }
     if (this.stack.length <= 1) {
       if (this.current === 'pause') this.deps.game.resume();
+      else if (this.current === 'complete') this.deps.game.resumeAfterComplete();
       return;
     }
     this.stack.pop();
@@ -131,6 +138,12 @@ export class Menu {
       case 'mode':
         el = this.buildMode();
         break;
+      case 'maps':
+        el = this.buildMaps();
+        break;
+      case 'net':
+        el = this.buildNet();
+        break;
       case 'controls':
         el = this.buildControls();
         break;
@@ -140,6 +153,9 @@ export class Menu {
       case 'pause':
         el = this.buildPause();
         break;
+      case 'complete':
+        el = this.buildComplete();
+        break;
     }
     this.screens.set(id, el);
     this.root.append(el);
@@ -148,6 +164,11 @@ export class Menu {
 
   private renderControls(): void {
     if (this.current === 'controls') this.render();
+  }
+
+  /** Redessine l'écran courant (état réseau qui change sous nos pieds). */
+  refresh(): void {
+    if (this.visible && !this.capture) this.render();
   }
 
   // ------------------------------------------------------------------ écrans
@@ -171,11 +192,12 @@ export class Menu {
     return h(
       'div',
       { class: 'menu-screen' },
-      h('h1', { class: 'game-title' }, 'TURBO SAMOURAÏ', h('br'), 'JETPACK'),
+      h('h1', { class: 'game-title' }, 'TURBO-SAMOURAÏ', h('br'), 'JETPACK 3D BOOGALOO'),
       h('p', { class: 'menu-sub', text: 'Prototype V1 · test de feel · deux grappins, un jetpack, des tongs' }),
       this.panel(
         '',
         this.btn('Jouer', () => this.push('mode')),
+        this.btn('Multijoueur en ligne', () => this.push('net')),
         this.btn('Contrôles', () => this.push('controls')),
         this.btn('Réglages', () => this.push('settings')),
       ),
@@ -194,14 +216,55 @@ export class Menu {
     const two = this.btn('2 joueurs', () => setCount(2), { 'data-nav-group': 'count', 'aria-pressed': String(s.playerCount === 2) });
     one.classList.toggle('selected', s.playerCount === 1);
     two.classList.toggle('selected', s.playerCount === 2);
+    const level = LEVEL_INFOS[s.levelId] ?? LEVEL_INFOS[0];
     return h(
       'div',
       { class: 'menu-screen' },
       this.panel(
         'Mode',
         h('div', { class: 'menu-row' }, one, two),
+        h(
+          'div',
+          { class: 'menu-row' },
+          h('span', { class: 'menu-label', text: 'Carte' }),
+          this.btn(`${level.name} …`, () => this.push('maps')),
+        ),
+        h('p', { class: 'menu-note', text: level.subtitle }),
         this.deviceAssignment(),
         this.btn('Lancer', () => this.deps.game.start(this.deps.settings.get().playerCount)),
+        this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
+      ),
+    );
+  }
+
+  /** Sélecteur de carte : les 4 difficultés, applicable aussi depuis la pause (relance la partie). */
+  private buildMaps(): HTMLElement {
+    const s = this.deps.settings.get();
+    // En partie (pause ou fin de niveau), on applique tout de suite ; au menu, on prépare la suivante.
+    const fromPause = this.stack.includes('pause') || this.stack.includes('complete');
+    let group: LevelMode | null = null;
+    const rows: HTMLElement[] = [];
+    for (const info of LEVEL_INFOS) {
+      if (info.mode !== group) {
+        group = info.mode;
+        rows.push(h('div', { class: 'menu-group', text: LEVEL_MODE_LABEL[group] }));
+      }
+      const b = this.btn(info.name, () => {
+        if (fromPause) this.deps.game.setLevel(info.id);
+        else this.deps.settings.update((st) => (st.levelId = info.id));
+        // setLevel relance la partie (et referme le menu) ; sinon on remonte d'un écran.
+        if (this.deps.game.phase !== 'playing') this.back();
+      }, { 'data-nav-group': 'map', 'aria-pressed': String(s.levelId === info.id) });
+      b.classList.toggle('selected', s.levelId === info.id);
+      rows.push(h('div', { class: 'bind-row' }, h('div', { class: 'bind-label' }, h('div', { text: info.name }), h('small', { text: info.subtitle })), h('div', { class: 'bind-slots' }, b)));
+    }
+    return h(
+      'div',
+      { class: 'menu-screen wide' },
+      this.panel(
+        'Carte',
+        h('p', { class: 'menu-note', text: fromPause ? 'Choisir une carte relance la partie immédiatement.' : 'Élimination : vider le stock d\'ennemis. Chrono : cartes longues, atteindre l\'arrivée.' }),
+        h('div', { class: 'bind-table' }, ...rows),
         this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
       ),
     );
@@ -251,6 +314,57 @@ export class Menu {
     if (pads.length === 0) lines.push('Aucune manette détectée : appuie sur un bouton de la manette.');
     for (const p of pads) lines.push(`Manette #${p.index} : ${p.id.slice(0, 48)} ${p.standard ? '(mapping standard)' : '(mapping NON standard : remappe les boutons)'}`);
     return h('div', { class: 'menu-status', id: 'pad-status' }, ...lines.map((l) => h('div', { text: l })));
+  }
+
+  /** Héberger / rejoindre par code. Le netcode démarre tout seul quand les deux joueurs sont là. */
+  private buildNet(): HTMLElement {
+    const s = this.deps.settings.get();
+    const net = this.deps.net;
+    const url = h('input', { type: 'text', class: 'menu-input', value: s.netUrl, spellcheck: 'false', 'data-nav': true }) as HTMLInputElement;
+    url.addEventListener('change', () => this.deps.settings.update((st) => (st.netUrl = url.value.trim())));
+
+    const code = h('input', {
+      type: 'text',
+      class: 'menu-input code',
+      value: s.netLastCode,
+      maxlength: 6,
+      placeholder: 'ABC234',
+      spellcheck: 'false',
+      'data-nav': true,
+    }) as HTMLInputElement;
+    code.addEventListener('input', () => {
+      code.value = normalizeCode(code.value);
+      this.deps.settings.update((st) => (st.netLastCode = code.value));
+    });
+
+    const status = h('div', { class: 'menu-status' });
+    const lines: string[] = [];
+    if (net.status === 'connecting') lines.push('Connexion au relais…');
+    if (net.status === 'waiting' && net.code) lines.push(`En attente du deuxième joueur. Transmets-lui le code : ${net.code}`);
+    if (net.status === 'connected') lines.push('Les deux joueurs sont connectés.');
+    if (net.status === 'error') lines.push(net.session.error);
+    if (net.message) lines.push(net.message);
+    if (lines.length === 0) lines.push('Lance le relais avec « npm run server », puis héberge ou rejoins avec un code.');
+    for (const l of lines) status.append(h('div', { text: l }));
+
+    const codeBanner = net.code && net.status === 'waiting' ? h('div', { class: 'net-code', text: net.code }) : null;
+
+    return h(
+      'div',
+      { class: 'menu-screen' },
+      this.panel(
+        'Multijoueur en ligne',
+        h('div', { class: 'menu-row' }, h('span', { class: 'menu-label', text: 'Serveur' }), url),
+        codeBanner,
+        this.btn('Héberger une session', () => net.host(this.deps.settings.get().netUrl)),
+        h('div', { class: 'menu-row' }, h('span', { class: 'menu-label', text: 'Code' }), code),
+        this.btn('Rejoindre', () => net.join(this.deps.settings.get().netUrl, code.value)),
+        net.status === 'idle' || net.status === 'closed' ? null : this.btn('Fermer la session', () => net.leave(), { class: 'menu-btn secondary' }),
+        status,
+        h('p', { class: 'menu-note', text: 'La partie tourne en rollback : chacun joue son input avec 3 ticks de retard, les divergences sont recalculées. En ligne, la carte, la seed et les params sont ceux de l\'hôte et restent figés.' }),
+        this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
+      ),
+    );
   }
 
   private buildControls(): HTMLElement {
@@ -374,9 +488,46 @@ export class Menu {
       this.panel(
         'Pause',
         this.btn('Reprendre', () => g.resume()),
-        this.btn('Recommencer', () => g.restart()),
+        this.deps.net.active ? null : this.btn('Recommencer', () => g.restart()),
         this.btn('Réglages', () => this.push('settings')),
-        this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
+        this.deps.net.active
+          ? this.btn('Quitter la session en ligne', () => this.deps.net.leave(), { class: 'menu-btn secondary' })
+          : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
+      ),
+    );
+  }
+
+  /** Fin de niveau : chrono figé, récap, et les deux actions qui comptent. */
+  private buildComplete(): HTMLElement {
+    const g = this.deps.game;
+    const st = g.state;
+    const net = g.net;
+    const guest = net !== null && !net.isHost;
+    const time = formatTime(st.finishTick * DT);
+    const info = LEVEL_INFOS[st.levelId];
+    const race = info?.mode === 'race';
+    const perPlayer =
+      st.playerCount === 2
+        ? h('p', { class: 'menu-note', text: `J1 : ${st.players[0].kills} tués, ${st.players[0].deaths} morts · J2 : ${st.players[1].kills} tués, ${st.players[1].deaths} morts` })
+        : h('p', { class: 'menu-note', text: `${st.players[0].deaths} mort${st.players[0].deaths > 1 ? 's' : ''} en route` });
+    return h(
+      'div',
+      { class: 'menu-screen' },
+      this.panel(
+        race ? 'Arrivée !' : 'Niveau terminé',
+        h('div', { class: 'complete-time', text: time }),
+        h('p', {
+          class: 'menu-sub',
+          text: race
+            ? `${info?.name ?? ''} bouclée · ${st.kills} ennemi${st.kills > 1 ? 's' : ''} au passage`
+            : `${st.kills} ennemi${st.kills > 1 ? 's' : ''} éliminé${st.kills > 1 ? 's' : ''} · ${info?.name ?? ''}`,
+        }),
+        perPlayer,
+        guest ? h('p', { class: 'menu-note', text: 'En ligne, c\'est l\'hôte qui relance la manche ou change de carte.' }) : null,
+        guest ? null : this.btn('Recommencer le niveau', () => g.restart()),
+        guest ? null : this.btn('Changer de carte', () => this.push('maps')),
+        this.btn('Continuer à jouer', () => g.resumeAfterComplete(), { class: 'menu-btn secondary' }),
+        net ? this.btn('Quitter la session', () => this.deps.net.leave(), { class: 'menu-btn secondary' }) : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
       ),
     );
   }

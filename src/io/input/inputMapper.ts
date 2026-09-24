@@ -85,6 +85,21 @@ export class InputMapper {
     return this.inputs;
   }
 
+  /**
+   * Net : un seul joueur est local. Les boutons viennent du périphérique du joueur 1 de CETTE
+   * machine, la visée du viewport du slot réseau (0 = hôte, 1 = invité).
+   */
+  sampleNet(state: GameState, picker: WorldPicker, slot: number): PlayerInput {
+    const s = this.settings();
+    const inp = this.inputs[slot];
+    inp.buttons = 0;
+    if (s.devices[0].kind === 'kbm') this.sampleKbm(state, slot, inp, picker, s);
+    else this.samplePad(slot, inp, s, 0);
+    this.kbm.endSample();
+    this.pads.endSample();
+    return inp;
+  }
+
   private sampleKbm(state: GameState, i: number, inp: PlayerInput, picker: WorldPicker, s: Settings): void {
     const kb = s.keyboard;
     const k = this.kbm;
@@ -106,8 +121,8 @@ export class InputMapper {
     inp.aim = this.lastAim[i];
   }
 
-  private samplePad(i: number, inp: PlayerInput, s: Settings): void {
-    const pad = this.padFor(i);
+  private samplePad(i: number, inp: PlayerInput, s: Settings, deviceIndex = i): void {
+    const pad = this.padFor(deviceIndex);
     if (!pad) {
       inp.aim = this.lastAim[i];
       return;

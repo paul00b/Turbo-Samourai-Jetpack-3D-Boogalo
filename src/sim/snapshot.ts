@@ -6,7 +6,7 @@ import { PARAM_KEYS, type SimParams, DEFAULT_PARAMS } from './params';
 import { MAX_PLAYERS, makeHook, makePlayer, type EnemyState, type GameState, type HookState, type PlayerState } from './state';
 
 export const SNAPSHOT_MAGIC = 0x54534a42; // "TSJB"
-export const SNAPSHOT_VERSION = 1;
+export const SNAPSHOT_VERSION = 2;
 
 class Writer {
   private buf = new ArrayBuffer(1024);
@@ -143,6 +143,7 @@ function writePlayer(w: Writer, p: PlayerState): void {
   w.i8(p.facing);
   w.i32(p.hp);
   w.u32(p.deaths);
+  w.u32(p.kills);
   w.u32(p.spawnTick);
   w.u32(p.teleportSeq);
   w.i32(p.cutPressTick);
@@ -171,6 +172,7 @@ function readPlayer(r: Reader): PlayerState {
   p.facing = r.i8();
   p.hp = r.i32();
   p.deaths = r.u32();
+  p.kills = r.u32();
   p.spawnTick = r.u32();
   p.teleportSeq = r.u32();
   p.cutPressTick = r.i32();
@@ -227,6 +229,9 @@ export function serializeState(s: GameState): Uint8Array {
   for (let i = 0; i < s.players.length; i++) writePlayer(w, s.players[i]);
   w.u16(s.enemies.length);
   for (let i = 0; i < s.enemies.length; i++) writeEnemy(w, s.enemies[i]);
+  w.u32(s.kills);
+  w.u8(s.finished);
+  w.i32(s.finishTick);
   return w.bytes();
 }
 
@@ -253,7 +258,10 @@ export function deserializeState(bytes: Uint8Array): GameState {
   const nEnemies = r.u16();
   const enemies: EnemyState[] = [];
   for (let i = 0; i < nEnemies; i++) enemies.push(readEnemy(r));
-  return { tick, seed, rng, levelId, playerCount, params, players, enemies };
+  const kills = r.u32();
+  const finished = r.u8();
+  const finishTick = r.i32();
+  return { tick, seed, rng, levelId, playerCount, params, players, enemies, kills, finished, finishTick };
 }
 
 /** FNV-1a 32 bits sur le snapshot : empreinte compacte de l'état, comparable entre navigateurs. */

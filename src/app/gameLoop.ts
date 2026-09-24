@@ -21,6 +21,8 @@ export class GameLoop {
   fps = 0;
   /** Durée réelle de la dernière frame (s), 0 pendant la pause. */
   dtReal = 0;
+  /** Vrai quand le dernier `advance` a été interrompu faute d'inputs distants. */
+  stalled = false;
 
   get paused(): boolean {
     return this._paused;
@@ -44,8 +46,12 @@ export class GameLoop {
     this.last = -1;
   }
 
-  /** Avance : exécute 0..N ticks via `tick`, retourne le nombre de ticks exécutés. */
-  advance(nowMs: number, tick: () => void): number {
+  /**
+   * Avance : exécute 0..N ticks via `tick`, retourne le nombre de ticks exécutés.
+   * `tick` retourne false pour refuser d'avancer (netcode en attente du pair) : on s'arrête là
+   * sans consommer l'accumulateur, et on le borne pour ne pas rattraper en rafale ensuite.
+   */
+  advance(nowMs: number, tick: () => boolean): number {
     this.frameCounter++;
     if (nowMs - this.frameWindowStart >= 1000) {
       this.fps = this.frameCounter;
@@ -67,11 +73,16 @@ export class GameLoop {
     this.dtReal = dt;
     this.acc += dt;
     let n = 0;
+    this.stalled = false;
     while (this.acc >= DT && n < MAX_TICKS_PER_FRAME) {
-      tick();
+      if (!tick()) {
+        this.stalled = true;
+        break;
+      }
       this.acc -= DT;
       n++;
     }
+    if (this.stalled && this.acc > DT * 2) this.acc = DT * 2;
     if (n >= MAX_TICKS_PER_FRAME && this.acc >= DT) this.acc = 0; // spirale de la mort : on lâche le retard
     this.tickCounter += n;
     if (nowMs - this.tickWindowStart >= 1000) {

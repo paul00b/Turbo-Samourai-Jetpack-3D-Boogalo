@@ -23,47 +23,31 @@ export interface DebugDeps {
 const GROUP_ORDER: ParamGroup[] = ['Mouvement', 'Grappin', 'Jetpack', 'Mort', 'Ennemis', 'Solveur'];
 
 export class DebugPanel {
-  private readonly panel: HTMLElement;
-  private readonly tab: HTMLButtonElement;
   private readonly info: HTMLElement;
+  private readonly netInfo: HTMLElement;
   private readonly result: HTMLElement;
   private readonly sliders = new Map<keyof SimParams, { range: HTMLInputElement; num: HTMLInputElement }>();
   private readonly toggles = new Map<keyof SimParams, HTMLInputElement>();
   private lastInfo = 0;
+  private lockedForGuest: boolean | null = null;
   private seedInput!: HTMLInputElement;
   private importArea!: HTMLTextAreaElement;
   private readonly countButtons = new Map<number, HTMLButtonElement>();
   private camSelect: HTMLSelectElement | null = null;
 
   constructor(
-    private readonly root: HTMLElement,
+    private readonly panel: HTMLElement,
     private readonly deps: DebugDeps,
   ) {
-    clear(root);
-    this.panel = h('div', { class: 'debug-panel' });
-    this.tab = h('button', { class: 'debug-tab', type: 'button', title: 'F1' }, 'DEBUG') as HTMLButtonElement;
-    this.tab.addEventListener('click', () => this.toggle());
     this.info = h('div', { class: 'debug-info' });
+    this.netInfo = h('div', { class: 'debug-info' });
     this.result = h('div', { class: 'debug-result' });
-    root.append(this.tab, this.panel);
     this.build();
-    this.setOpen(deps.settings.get().debug.panelOpen);
     deps.params.subscribe(() => this.refreshValues());
     deps.settings.subscribe((s) => {
       for (const [n, b] of this.countButtons) b.classList.toggle('selected', s.playerCount === n);
       if (this.camSelect && this.camSelect.value !== s.cameraMode) this.camSelect.value = s.cameraMode;
     });
-  }
-
-  toggle(): void {
-    this.setOpen(!this.deps.settings.get().debug.panelOpen);
-  }
-
-  setOpen(open: boolean): void {
-    this.deps.settings.update((s) => (s.debug.panelOpen = open));
-    this.root.classList.toggle('open', open);
-    document.body.classList.toggle('debug-open', open);
-    this.tab.textContent = open ? 'DEBUG ▸' : '◂ DEBUG';
   }
 
   private build(): void {
@@ -223,6 +207,7 @@ export class DebugPanel {
       ),
       this.result,
       this.info,
+      this.netInfo,
     );
   }
 
@@ -322,10 +307,39 @@ export class DebugPanel {
   }
 
   update(nowMs: number): void {
-    if (!this.deps.settings.get().debug.panelOpen) return;
+    const s = this.deps.settings.get().debug;
+    if (!s.panelOpen || s.panelTab !== 'debug') return;
     if (nowMs - this.lastInfo < 250) return;
     this.lastInfo = nowMs;
     const g = this.deps.game;
     this.info.textContent = `tick ${g.state.tick} · hash ${g.stateHashHex()} · ${g.loop.tps} ticks/s · ${g.loop.fps} fps · historique ${g.history.oldestTick}→${g.history.newestTick}`;
+    const net = g.net;
+    if (!net) {
+      this.netInfo.textContent = '';
+      this.setLocked(false);
+      return;
+    }
+    this.setLocked(!net.isHost);
+    const st = net.stats;
+    const pending = g.paramSyncTick >= 0 ? ` · params au tick ${g.paramSyncTick}` : '';
+    const role = net.isHost
+      ? 'tu es l\'hôte : tes changements de params sont datés et envoyés à l\'autre joueur'
+      : 'params contrôlés par l\'hôte';
+    this.netInfo.textContent =
+      `réseau : slot ${net.slot} · ${st.rollbacks} rollbacks (${st.resimTicks} ticks resimulés, dernier ${st.lastDepth}) · ` +
+      `${st.stalls} attentes · prédiction ${st.predictedAhead} ticks · ${st.paramSyncs} synchros params` +
+      `${st.paramsTooLate > 0 ? ` · ${st.paramsTooLate} TROP TARD` : ''}${pending}` +
+      `${g.loop.stalled ? ' · EN ATTENTE DU PAIR' : ''} — ${role}`;
+  }
+
+  /** Chez l'invité, les réglages de sim sont en lecture seule : c'est l'hôte qui décide. */
+  private setLocked(locked: boolean): void {
+    if (this.lockedForGuest === locked) return;
+    this.lockedForGuest = locked;
+    for (const ui of this.sliders.values()) {
+      ui.range.disabled = locked;
+      ui.num.disabled = locked;
+    }
+    for (const cb of this.toggles.values()) cb.disabled = locked;
   }
 }

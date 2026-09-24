@@ -6,12 +6,17 @@ import { Sfx } from './io/audio/sfx';
 import { GamepadManager } from './io/input/gamepad';
 import { InputMapper } from './io/input/inputMapper';
 import { KeyboardMouse } from './io/input/keyboardMouse';
+import { BuildsStore } from './io/buildsStore';
 import { ParamsStore } from './io/paramsStore';
 import { SettingsStore } from './io/settings';
 import { Renderer } from './render/renderer';
 import { DebugPanel } from './ui/debugPanel';
 import { Hud } from './ui/hud';
+import { BuildPanel } from './ui/buildPanel';
+import { MapPanel } from './ui/mapPanel';
 import { Menu } from './ui/menu';
+import { NetGame } from './net/netGame';
+import { SidePanelHost } from './ui/sidePanel';
 
 async function boot(): Promise<void> {
   const gameEl = document.getElementById('game') as HTMLElement;
@@ -21,6 +26,7 @@ async function boot(): Promise<void> {
 
   const settings = new SettingsStore();
   const params = new ParamsStore();
+  const builds = new BuildsStore();
   const kbm = new KeyboardMouse(gameEl);
   const pads = new GamepadManager();
   const audio = new AudioEngine();
@@ -41,7 +47,7 @@ async function boot(): Promise<void> {
 
   let renderer: Renderer;
   try {
-    renderer = await Renderer.create(gameEl, getLevel(0));
+    renderer = await Renderer.create(gameEl, getLevel(settings.get().levelId));
   } catch (e) {
     showFatal(`WebGL indisponible : ${(e as Error).message}`);
     return;
@@ -50,17 +56,31 @@ async function boot(): Promise<void> {
   const mapper = new InputMapper(kbm, pads, () => settings.get());
   const game = new Game({ renderer, mapper, kbm, sfx, settings, params });
   const hud = new Hud(hudEl);
-  const menu = new Menu(menuEl, { game, settings, kbm, pads, sfx, audio });
-  const debug = new DebugPanel(debugEl, { game, settings, params });
+  const net = new NetGame({ game, settings, params });
+  const menu = new Menu(menuEl, { game, net, settings, kbm, pads, sfx, audio });
+  net.onChange = () => menu.refresh();
+  const panels = new SidePanelHost(debugEl, settings);
+  const debug = new DebugPanel(panels.add({ id: 'debug', label: 'DEBUG', title: 'F1' }), { game, settings, params });
+  const maps = new MapPanel(panels.add({ id: 'cartes', label: 'CARTES', title: 'F5' }), { game, settings });
+  new BuildPanel(panels.add({ id: 'builds', label: 'BUILDS', title: 'F7' }), { game, params, builds });
+  panels.restore();
   // Handle d'inspection (console navigateur, tests Playwright).
-  (window as unknown as { __tsj: unknown }).__tsj = { game, settings, params, mapper, pads, kbm, audio };
+  (window as unknown as { __tsj: unknown }).__tsj = { game, settings, params, builds, mapper, pads, kbm, audio, net };
 
   // Raccourcis debug globaux
   window.addEventListener('keydown', (e) => {
     switch (e.code) {
       case 'F1':
         e.preventDefault();
-        debug.toggle();
+        panels.toggle('debug');
+        break;
+      case 'F5':
+        e.preventDefault();
+        panels.toggle('cartes');
+        break;
+      case 'F7':
+        e.preventDefault();
+        panels.toggle('builds');
         break;
       case 'F2':
         e.preventDefault();
@@ -93,14 +113,17 @@ async function boot(): Promise<void> {
     pads.poll(now);
     menu.update(now);
     game.frame(now);
+    net.frame();
     const s = settings.get();
     const kbmPlayer = s.devices.findIndex((d, i) => d.kind === 'kbm' && i < game.state.playerCount);
     mouse.visible = game.phase === 'playing' && kbmPlayer >= 0 && kbm.mouseSeen;
     mouse.x = kbm.mouseX;
     mouse.y = kbm.mouseY;
     hud.setVisible(game.phase !== 'menu');
+    hud.setBannerVisible(game.phase === 'playing');
     hud.update(game.state, game.loop, mapper, s, mouse, renderer.renderMs);
     debug.update(now);
+    maps.update();
     document.body.classList.toggle('playing', game.phase === 'playing');
     requestAnimationFrame(frame);
   };

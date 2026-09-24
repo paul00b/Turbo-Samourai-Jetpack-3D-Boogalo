@@ -20,7 +20,7 @@ export class Renderer implements WorldPicker {
   private readonly divider = new Graphics();
   private readonly cameras = [new Camera(), new Camera(), new Camera()];
   private readonly poses: PlayerPose[] = [makePose(), makePose()];
-  private readonly level: Level;
+  private level: Level;
   private mode: CameraMode = 'single';
   private playerCount = 1;
   private camSettings: CameraSettings | null = null;
@@ -67,6 +67,14 @@ export class Renderer implements WorldPicker {
   }
   get height(): number {
     return this.app.screen.height;
+  }
+
+  /** Change la carte affichée : les tuiles et les libellés sont redessinés une fois. */
+  setLevel(level: Level): void {
+    if (level === this.level) return;
+    this.level = level;
+    for (const v of this.views) v.setLevel(level);
+    this.resetCameras();
   }
 
   /** Réinitialise le lissage des caméras (nouvelle partie). */

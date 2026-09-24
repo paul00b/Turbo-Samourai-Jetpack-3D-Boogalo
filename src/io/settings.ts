@@ -2,6 +2,7 @@
  * Réglages persistés (localStorage). Tout ce qui est côté IO/rendu et pas dans la sim :
  * volumes, caméra, périphériques par joueur, bindings, options de debug visuel.
  */
+import { clampLevelId } from '../sim';
 import {
   cloneGamepadBindings,
   cloneKeyboardBindings,
@@ -26,6 +27,8 @@ export interface DebugVisuals {
   showTrail: boolean;
   trailSeconds: number;
   panelOpen: boolean;
+  /** Onglet latéral ouvert ('debug' | 'cartes' | 'réseau'). */
+  panelTab: string;
 }
 
 export interface CameraSettings {
@@ -49,6 +52,12 @@ export interface Settings {
   debug: DebugVisuals;
   camera: CameraSettings;
   seed: number;
+  /** Carte sélectionnée (index dans LEVELS, 0 = facile). */
+  levelId: number;
+  /** Relais de sessions (npm run server). */
+  netUrl: string;
+  /** Dernier code saisi, pour ne pas le retaper. */
+  netLastCode: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -63,10 +72,20 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   keyboard: cloneKeyboardBindings(DEFAULT_KEYBOARD),
   gamepad: cloneGamepadBindings(DEFAULT_GAMEPAD),
-  debug: { showHitboxes: false, showVelocity: false, showTrail: true, trailSeconds: 3, panelOpen: true },
+  debug: { showHitboxes: false, showVelocity: false, showTrail: true, trailSeconds: 3, panelOpen: true, panelTab: 'debug' },
   camera: { zoomMin: 0.3, zoomMax: 1.1, soloZoom: 0.85, splitZoom: 0.8, margin: 260, smoothing: 7 },
   seed: 1234,
+  levelId: 0,
+  netUrl: defaultNetUrl(),
+  netLastCode: '',
 };
+
+/** Même hôte que la page, port du relais : marche tel quel en LAN comme en local. */
+function defaultNetUrl(): string {
+  const host = typeof location !== 'undefined' && location.hostname ? location.hostname : 'localhost';
+  const proto = typeof location !== 'undefined' && location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${host}:8787`;
+}
 
 const STORAGE_KEY = 'tsj.settings.v1';
 
@@ -158,9 +177,16 @@ function mergeSettings(base: Settings, parsed: Partial<Settings>): Settings {
       }
     }
   }
-  if (parsed.debug && typeof parsed.debug === 'object') Object.assign(out.debug, pickBooleansAndNumbers(parsed.debug));
+  if (parsed.debug && typeof parsed.debug === 'object') {
+    Object.assign(out.debug, pickBooleansAndNumbers(parsed.debug));
+    const tab = (parsed.debug as { panelTab?: unknown }).panelTab;
+    if (typeof tab === 'string') out.debug.panelTab = tab;
+  }
   if (parsed.camera && typeof parsed.camera === 'object') Object.assign(out.camera, pickBooleansAndNumbers(parsed.camera));
   if (typeof parsed.seed === 'number' && Number.isFinite(parsed.seed)) out.seed = parsed.seed >>> 0;
+  if (typeof parsed.levelId === 'number') out.levelId = clampLevelId(parsed.levelId);
+  if (typeof parsed.netUrl === 'string' && parsed.netUrl.startsWith('ws')) out.netUrl = parsed.netUrl;
+  if (typeof parsed.netLastCode === 'string') out.netLastCode = parsed.netLastCode.slice(0, 6);
   return out;
 }
 

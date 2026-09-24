@@ -19,7 +19,8 @@ export type SimEventType =
   | 'respawn'
   | 'enemyKill'
   | 'playerHit'
-  | 'cutWindowOpen';
+  | 'cutWindowOpen'
+  | 'levelComplete';
 
 export type DeathCause = 'wall' | 'spike' | 'enemy' | 'void';
 

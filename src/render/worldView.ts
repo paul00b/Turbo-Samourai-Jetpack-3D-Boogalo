@@ -37,6 +37,7 @@ const COLOR_SPIKE_BASE = 0x2a1d22;
 const COLOR_SPIKE = 0xd94848;
 const COLOR_ENEMY = 0xc74b4b;
 const COLOR_ROPE = 0xdde3ea;
+const COLOR_GOAL = 0x5ae08a;
 
 export class WorldView {
   readonly root = new Container();
@@ -51,7 +52,14 @@ export class WorldView {
 
   constructor(level: Level) {
     this.root.addChild(this.tiles, this.labels, this.trail, this.enemies, this.ropes, this.players, this.fxG, this.debug);
+    this.setLevel(level);
+  }
+
+  /** Tuiles et libellés : dessinés une fois par carte (grey-box statique). */
+  setLevel(level: Level): void {
     this.drawTiles(level);
+    this.drawGoal(level);
+    this.labels.removeChildren().forEach((c) => c.destroy());
     for (const l of level.labels) {
       const t = new Text({
         text: l.name,
@@ -60,6 +68,27 @@ export class WorldView {
       t.position.set(l.x * TILE_SIZE, l.y * TILE_SIZE);
       this.labels.addChild(t);
     }
+  }
+
+  /** Zone d'arrivée : damier vert translucide + montants pleins, lisible de loin. */
+  private drawGoal(level: Level): void {
+    const g = this.tiles;
+    const goal = level.goal;
+    if (!goal) return;
+    g.rect(goal.x, goal.y, goal.w, goal.h).fill({ color: COLOR_GOAL, alpha: 0.14 });
+    const cell = TILE_SIZE / 2;
+    const cols = Math.ceil(goal.w / cell);
+    const rows = Math.ceil(goal.h / cell);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if ((r + c) % 2 !== 0) continue;
+        const w = Math.min(cell, goal.x + goal.w - (goal.x + c * cell));
+        const h = Math.min(cell, goal.y + goal.h - (goal.y + r * cell));
+        g.rect(goal.x + c * cell, goal.y + r * cell, w, h).fill({ color: COLOR_GOAL, alpha: 0.3 });
+      }
+    }
+    g.rect(goal.x - 3, goal.y, 3, goal.h).fill(COLOR_GOAL);
+    g.rect(goal.x + goal.w, goal.y, 3, goal.h).fill(COLOR_GOAL);
   }
 
   private drawTiles(level: Level): void {

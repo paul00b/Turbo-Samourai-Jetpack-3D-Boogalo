@@ -90,6 +90,46 @@ export function step(state: GameState, inputs: readonly PlayerInput[], events: S
 
   updateEnemies(state, level);
   for (let i = 0; i < n; i++) postTick(state, i, events);
+  checkLevelComplete(state, level, events);
+}
+
+/**
+ * Objectif du niveau, selon son mode :
+ *   - 'race'  : toucher la zone d'arrivée. Le premier joueur qui y entre termine la manche.
+ *   - 'kills' : vider le stock d'ennemis. Sans effet en "ennemis illimités" (pas de fin).
+ * Dans les deux cas le chrono se fige sur `finishTick`.
+ */
+function checkLevelComplete(state: GameState, level: Level, events: SimEvent[]): void {
+  if (state.finished) return;
+  if (level.mode === 'race') {
+    const g = level.goal;
+    if (!g) return;
+    const r = state.params.playerRadius;
+    for (let i = 0; i < state.playerCount; i++) {
+      const pl = state.players[i];
+      const cx = clampNum(pl.x, g.x, g.x + g.w);
+      const cy = clampNum(pl.y, g.y, g.y + g.h);
+      const dx = pl.x - cx;
+      const dy = pl.y - cy;
+      if (dx * dx + dy * dy < r * r) {
+        finishLevel(state, i, events);
+        return;
+      }
+    }
+    return;
+  }
+  const p = state.params;
+  if (p.enemiesUnlimited || !p.enemiesEnabled) return;
+  if (state.enemies.length === 0) return;
+  for (let i = 0; i < state.enemies.length; i++) if (state.enemies[i].alive) return;
+  finishLevel(state, 0, events);
+}
+
+function finishLevel(state: GameState, byPlayer: number, events: SimEvent[]): void {
+  state.finished = 1;
+  state.finishTick = state.tick;
+  const pl = state.players[byPlayer];
+  emit(events, state, 'levelComplete', byPlayer, pl.x, pl.y, { value: state.kills });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -121,13 +161,13 @@ function updateControls(state: GameState, i: number, input: PlayerInput, events:
     const edge = (pressed & bit) !== 0;
     hook.reelDelta = 0;
     if (p.holdToAttach) {
-      // Mode "maintenir = accroché" : relâcher lâche (ou annule le tir en vol). Le reel a sa propre touche.
+      // Mode "maintenir = accroché" : le maintien rétracte tout seul, relâcher lâche (ou annule le tir en vol).
       if (hook.state === HOOK_IDLE) {
         if (edge) fireHook(state, i, hIdx, events);
       } else if (!down) {
         detachHook(state, i, hIdx, events);
       } else if (hook.state === HOOK_ATTACHED) {
-        setReeling(state, i, hIdx, reelHeld, events);
+        setReeling(state, i, hIdx, true, events);
       }
     } else {
       // Mode spec d'origine : maintien = reel, relâcher garde la corde, second appui = lâcher.
@@ -556,8 +596,12 @@ function collideEnemies(state: GameState, i: number, events: SimEvent[]): void {
 function killEnemy(state: GameState, ei: number, byPlayer: number, events: SimEvent[]): void {
   const e = state.enemies[ei];
   e.alive = 0;
-  e.respawnTimer = Math.max(0, Math.floor(state.params.enemyRespawnTicks));
-  emit(events, state, 'enemyKill', byPlayer, e.x, e.y, { enemy: ei });
+  // Stock fini : pas de respawn, l'ennemi est définitivement retiré du compte.
+  e.respawnTimer = state.params.enemiesUnlimited ? Math.max(0, Math.floor(state.params.enemyRespawnTicks)) : 0;
+  state.kills++;
+  const pl = state.players[byPlayer];
+  if (pl) pl.kills++;
+  emit(events, state, 'enemyKill', byPlayer, e.x, e.y, { enemy: ei, value: state.kills });
 }
 
 function hitPlayer(state: GameState, i: number, ei: number, events: SimEvent[]): void {
@@ -640,6 +684,10 @@ function updateEnemies(state: GameState, level: Level): void {
   for (let ei = 0; ei < enemies.length; ei++) {
     const e = enemies[ei];
     if (!e.alive) {
+      // Toggle "illimités" activé après coup : les morts repartent en file de respawn.
+      if (e.respawnTimer === 0 && p.enemiesUnlimited && !state.finished) {
+        e.respawnTimer = Math.max(1, Math.floor(p.enemyRespawnTicks));
+      }
       if (e.respawnTimer > 0) {
         e.respawnTimer--;
         if (e.respawnTimer === 0) {

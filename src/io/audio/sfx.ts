@@ -168,6 +168,15 @@ export class Sfx {
     this.tone('square', 780, 780, 0.09, 0.07, { delay: 0.06, filter: 2500 });
   }
 
+  /** Fin de niveau : arpège montant, plus long que les sons de jeu pour bien marquer le coup. */
+  levelComplete(): void {
+    const notes = [523, 659, 784, 1047];
+    for (let i = 0; i < notes.length; i++) {
+      this.tone('square', notes[i], notes[i], 0.16, 0.08, { delay: i * 0.09, filter: 3000 });
+      this.tone('triangle', notes[i] / 2, notes[i] / 2, 0.2, 0.05, { delay: i * 0.09 });
+    }
+  }
+
   menuBack(): void {
     this.tone('square', 420, 300, 0.1, 0.06, { filter: 2000 });
   }
@@ -284,6 +293,9 @@ export class Sfx {
           break;
         case 'enemyKill':
           this.enemyKill();
+          break;
+        case 'levelComplete':
+          this.levelComplete();
           break;
         case 'playerHit':
           this.playerHit();

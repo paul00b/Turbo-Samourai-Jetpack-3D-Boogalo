@@ -10,13 +10,16 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "server": "node server/index.mjs"
   },
   "dependencies": {
-    "pixi.js": "^8.21.0"
+    "pixi.js": "^8.21.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
+    "@types/ws": "^8.18.1",
     "typescript": "~5.9.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.11"
