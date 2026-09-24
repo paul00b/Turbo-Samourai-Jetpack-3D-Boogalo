@@ -290,9 +290,17 @@ première touche.
   carte depuis l'écran de fin, « continuer à jouer » sans réinitialiser, non-réouverture de l'écran.
 - `test/math.test.ts`, `test/no-forbidden-math.test.ts`.
 
+## Direction artistique (planches)
+
+`design/planches/index.html` : premier jet de DA en pixel art animé, en dehors du jeu. Trois niveaux (Port
+d'Umibozu, Forteresse de braise, Bambouseraie maudite) et un gros plan du samouraï, rendus en direct en
+640 × 360 sur canvas. Sous chaque planche, le mode **Valeurs** (niveaux de gris) et le mode **Couche de jeu**
+(décor coupé) servent à vérifier que le perso reste lisible. Ouvrir le fichier dans un navigateur suffit,
+aucun build. Tout est procédural : ça valide la direction et le mouvement, pas le rendu final.
+
 ## Limites connues de la V1
 
 - Les cordes traversent les murs (pas d'enroulement autour des coins).
 - Pas de collision joueur-joueur (seulement la corde entre eux).
 - Le feel dépend des valeurs par défaut de `DEFAULT_PARAMS` : elles sont un point de départ, pas un réglage final.
-- Aucun art : grey-box volontaire.
+- Aucun art dans le jeu : grey-box volontaire (la DA est explorée à part dans `design/planches`).

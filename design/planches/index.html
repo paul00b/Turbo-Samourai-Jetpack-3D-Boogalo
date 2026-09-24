@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Planches Turbo Samouraï</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    --ground: #0d0f16;
+    --surface: #151925;
+    --line: #262c3d;
+    --text: #e8e2d6;
+    --muted: #9097a8;
+    --gold: #e0b35a;
+    --hero: #4fd1ff;
+    --lethal: #ff5a5a;
+    --killer: #5ae08a;
+    --pixel: 'DotGothic16', 'MS Gothic', ui-monospace, monospace;
+    --body: 'Zen Kaku Gothic New', 'Hiragino Sans', system-ui, sans-serif;
+  }
+  html, body { background: var(--ground); color: var(--text); }
+  body { font-family: var(--body); font-size: 16px; line-height: 1.6; padding-inline: 16px; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding-block: 40px 72px; display: flex; flex-direction: column; gap: 56px; }
+  header { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+  .eyebrow { font-family: var(--pixel); color: var(--gold); letter-spacing: 0.08em; font-size: 14px; margin: 0; }
+  h1, h2, h3 { font-family: var(--pixel); font-weight: 400; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(28px, 4.4vw, 46px); line-height: 1.15; }
+  h2 { font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; }
+  h3 { font-size: 17px; line-height: 1.3; }
+  p { margin: 0; }
+  .lede { color: var(--text); max-width: 66ch; }
+  .sub { color: var(--muted); max-width: 66ch; font-size: 15px; }
+  .hero-word { color: var(--hero); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  button { font: inherit; }
+  .btn { font-family: var(--pixel); font-size: 14px; letter-spacing: 0.04em; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 2px; padding: 8px 14px; cursor: pointer; }
+  .btn:hover { border-color: var(--gold); }
+  .btn:focus-visible, .mode:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .planche { display: flex; flex-direction: column; gap: 18px; }
+  .frame { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; container-type: inline-size; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
+  .frame canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+  .hud { position: absolute; inset: 0; pointer-events: none; font-family: var(--pixel); color: #dde3ea; text-shadow: 0 1px 0 #000, 1px 0 0 #000; }
+  .hud-p1 { position: absolute; left: 1.6cqw; top: 2.2cqw; width: clamp(120px, 20cqw, 250px); padding: clamp(5px, 0.8cqw, 10px) clamp(6px, 1cqw, 12px); background: rgba(8, 10, 16, 0.62); border-left: 3px solid var(--hero); display: flex; flex-direction: column; gap: clamp(2px, 0.35cqw, 5px); }
+  .hud-top, .hud-row { display: flex; justify-content: space-between; gap: 8px; font-size: clamp(8px, 1cqw, 13px); color: #b8c0cc; }
+  .hud-speed { display: flex; align-items: baseline; gap: 6px; }
+  .hud-speed b { font-weight: 400; font-size: clamp(18px, 3.4cqw, 42px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .hud-speed b.killer { color: var(--killer); }
+  .hud-speed b.lethal { color: var(--lethal); }
+  .hud-speed small { font-size: clamp(8px, 0.95cqw, 12px); color: #8b95a7; }
+  .hud-heat { position: relative; height: clamp(9px, 1.2cqw, 15px); background: #1c232d; box-shadow: inset 0 0 0 1px #2a3341; }
+  .hud-heat i { position: absolute; inset: 0 auto 0 0; width: 0; background: #ffe28a; }
+  .hud-heat i.hot { background: #ffb347; }
+  .hud-heat i.over { background: var(--lethal); }
+  .hud-heat span { position: absolute; inset: 0; display: grid; place-items: center; font-size: clamp(7px, 0.85cqw, 11px); letter-spacing: 0.06em; color: #fff; mix-blend-mode: difference; text-shadow: none; }
+  .hp { color: #ff6b6b; letter-spacing: 0.1em; }
+  .hud-stage { position: absolute; right: 1.6cqw; top: 2.2cqw; font-size: clamp(9px, 1.25cqw, 16px); color: var(--gold); letter-spacing: 0.06em; }
+  .hud-mode { position: absolute; right: 1.6cqw; bottom: 1.8cqw; font-size: clamp(8px, 1cqw, 13px); color: #dde3ea; background: rgba(8, 10, 16, 0.7); padding: 2px 8px; }
+  .hud-phase { position: absolute; left: 1.6cqw; bottom: 1.8cqw; font-size: clamp(14px, 3cqw, 38px); color: #fff; letter-spacing: 0.08em; }
+  .hud-p1.compact { width: clamp(120px, 18cqw, 230px); }
+  .frame-error { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--lethal); font-family: var(--pixel); }
+
+  .meta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); gap: 28px; align-items: start; }
+  .meta-text { display: flex; flex-direction: column; gap: 10px; }
+  .pitch { color: var(--muted); max-width: 66ch; }
+  .notes { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; max-width: 70ch; }
+  .notes li { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; font-size: 15px; }
+  .tag { font-family: var(--pixel); font-size: 12px; letter-spacing: 0.06em; color: var(--gold); padding-top: 3px; }
+  .side { display: flex; flex-direction: column; gap: 16px; }
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); }
+  .mode { font-family: var(--pixel); font-size: 13px; color: var(--muted); background: transparent; border: 0; border-right: 1px solid var(--line); padding: 9px 6px; cursor: pointer; }
+  .mode:last-child { border-right: 0; }
+  .mode[aria-pressed="true"] { color: var(--ground); background: var(--gold); }
+  .mode-help { font-size: 13px; color: var(--muted); min-height: 2.6em; }
+  .swatches { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+  .swatches li { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+  .swatches i { flex: 0 0 18px; height: 18px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); }
+  .swatches span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .swatches code { font-family: var(--pixel); font-size: 11px; color: var(--muted); margin-left: auto; }
+
+  .rules { display: flex; flex-direction: column; gap: 20px; }
+  .rules-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 22px 36px; margin: 0; padding: 0; list-style: none; }
+  .rules-grid li { display: flex; flex-direction: column; gap: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .rules-grid p { color: var(--muted); font-size: 15px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--muted); }
+  .legend b { font-family: var(--pixel); font-weight: 400; color: var(--text); }
+  .next { display: flex; flex-direction: column; gap: 12px; max-width: 760px; }
+  .next ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 15px; }
+  code.k { font-family: var(--pixel); color: var(--text); font-size: 0.92em; }
+
+  @media (max-width: 760px) {
+    .meta { grid-template-columns: 1fr; }
+    .notes li { grid-template-columns: 1fr; gap: 2px; }
+    .hud-p1 { top: 1.6cqw; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">TURBO SAMOURAÏ JETPACK · DIRECTION ARTISTIQUE, DEUXIÈME JET</p>
+    <h1>Trois niveaux, un samouraï qu'on ne perd jamais de vue</h1>
+    <p class="lede">Pixel art en 640 × 360, calculé en direct et agrandi sans lissage (×2 pile sur un écran large). Le samouraï ne tourne plus en boucle : une petite physique de corde et de jetpack, sur le même principe que la sim du proto, lui fait enchaîner lâcher, vol, lancer de grappin, accroche et reel. La caméra le suit, la parallaxe vient de ses déplacements.</p>
+    <p class="sub">Le HUD reprend les valeurs du proto : chauffe 0,45/s, refroidissement 0,55/s, reprise à 35 %, vitesse en vert au-dessus du seuil de kill (450 px/s) et en rouge au-dessus du seuil de mort (1800 px/s). Sous chaque planche, <b>Valeurs</b> passe l'image en six niveaux de gris et <b>Couche de jeu</b> retire tout le décor.</p>
+    <div class="toolbar">
+      <button class="btn" id="toggle-anim" type="button">Mettre en pause</button>
+    </div>
+  </header>
+
+  <section class="planche" data-scene="perso" aria-labelledby="t-perso">
+    <div class="frame">
+      <canvas role="img" aria-label="Le samouraï en gros plan qui passe d'une ancre à l'autre : swing, lâcher, jetpack, lancer du grappin, reel."></canvas>
+      <div class="hud" aria-hidden="true">
+        <div class="hud-p1 compact">
+          <div class="hud-top"><span>J1</span><span>gros plan ×8</span></div>
+          <div class="hud-heat"><i data-heat></i><span data-heat-label>CHAUFFE 0%</span></div>
+          <div class="hud-row"><span data-speed>0</span><span>px/s</span></div>
+        </div>
+        <div class="hud-phase" data-phase>SWING</div>
+        <div class="hud-mode" data-mode-label hidden></div>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="meta-text">
+        <h2 id="t-perso">Le samouraï de près</h2>
+        <p class="pitch">Deux ancres, un fond neutre, et le perso qui passe de l'une à l'autre. La phase en cours s'affiche en bas à gauche.</p>
+        <ul class="notes">
+          <li><span class="tag">PANTIN</span><span>Redessiné pixel par pixel à chaque frame depuis un squelette. Le corps s'aligne sur la corde, le bras tient la corde ou vise l'ancre suivante, les genoux se plient au sommet du swing et se tendent en bas.</span></li>
+          <li><span class="tag">SECONDAIRE</span><span>Les jambes suivent avec un temps de retard, l'écharpe est une chaîne de tissu simulée, les tongs claquent sous les talons, les yeux clignent, les jambes pédalent dans le vide en vol libre.</span></li>
+          <li><span class="tag">JEU</span><span>Le jetpack rougit avec la chauffe et fume en surchauffe. La corde passe au cyan pendant le reel, comme dans le proto, et se détend en courbe quand elle est molle. Étincelles à l'accroche.</span></li>
+          <li><span class="tag">LUMIÈRE</span><span>Liseré d'un pixel côté haut-gauche, dans la couleur de la lumière du niveau : bleu d'orage, orange de lave, lavande de lune. Contour noir doublé d'un second à 45 %.</span></li>
+        </ul>
+      </div>
+      <div class="side">
+        <div class="modes" role="group" aria-label="Affichage du gros plan">
+          <button class="mode" id="perso-game" type="button" data-mode="game" aria-pressed="true">Jeu</button>
+          <button class="mode" id="perso-values" type="button" data-mode="values" aria-pressed="false">Valeurs</button>
+          <button class="mode" id="perso-play" type="button" data-mode="play" aria-pressed="false">Couche de jeu</button>
+        </div>
+        <p class="mode-help" data-mode-help></p>
+        <ul class="swatches" data-palette></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="planche" data-scene="port" aria-labelledby="t-port">
+    <div class="frame">
+      <canvas role="img" aria-label="Port d'Umibozu : le samouraï passe de grue en mât au-dessus du port sous l'orage, Umibozu émerge derrière les pontons."></canvas>
+      <div class="hud" aria-hidden="true">
+        <div class="hud-p1">
+          <div class="hud-top"><span>J1</span><span>clavier+souris</span></div>
+          <div class="hud-speed"><b data-speed>0</b><small>px/s</small></div>
+          <div class="hud-heat"><i data-heat></i><span data-heat-label>CHAUFFE 0%</span></div>
+          <div class="hud-row"><span class="hp">♥♥♥</span><span data-deaths>☠ 0</span><span data-chrono>00:00.00</span></div>
+        </div>
+        <div class="hud-stage">PORT D'UMIBOZU</div>
+        <div class="hud-mode" data-mode-label hidden></div>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="meta-text">
+        <h2 id="t-port">Port d'Umibozu</h2>
+        <p class="pitch">Un port de pêcheurs pris dans l'orage. Umibozu sort de l'eau derrière les pontons et suit le samouraï des yeux.</p>
+        <ul class="notes">
+          <li><span class="tag">FOND</span><span>Nuages sur deux plans, jonques qui tanguent à l'horizon, mouettes, mer calculée ligne par ligne, éclair double toutes les 7 s. Une tentacule se lève puis frappe l'eau toutes les 9 s.</span></li>
+          <li><span class="tag">DÉCOR</span><span>Guirlandes de lanternes, nobori qui claquent au vent, poissons qui sèchent, fanions sur les haubans, écume contre la coque, pluie qui éclabousse les planches, gouttes sous les grues.</span></li>
+          <li><span class="tag">LECTURE</span><span>L'éclair n'éclaire que le décor, rien ne clignote sous le joueur. La pluie de premier plan s'écarte autour du perso sur 24 px.</span></li>
+          <li><span class="tag">JEU</span><span>Bois à arête claire : accrochable. Pierre mouillée à reflets obliques : lisse. Pieux à pointe rouge : mortels. Quatre ancres : grue, mât, jonque, grue de la falaise.</span></li>
+        </ul>
+      </div>
+      <div class="side">
+        <div class="modes" role="group" aria-label="Affichage de la planche Port d'Umibozu">
+          <button class="mode" id="port-game" type="button" data-mode="game" aria-pressed="true">Jeu</button>
+          <button class="mode" id="port-values" type="button" data-mode="values" aria-pressed="false">Valeurs</button>
+          <button class="mode" id="port-play" type="button" data-mode="play" aria-pressed="false">Couche de jeu</button>
+        </div>
+        <p class="mode-help" data-mode-help></p>
+        <ul class="swatches" data-palette></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="planche" data-scene="forge" aria-labelledby="t-forge">
+    <div class="frame">
+      <canvas role="img" aria-label="Forteresse de braise : le samouraï passe de la potence au clocher puis à la tour de guet au-dessus d'une rivière de lave, un oni de basalte domine le château en feu."></canvas>
+      <div class="hud" aria-hidden="true">
+        <div class="hud-p1">
+          <div class="hud-top"><span>J1</span><span>clavier+souris</span></div>
+          <div class="hud-speed"><b data-speed>0</b><small>px/s</small></div>
+          <div class="hud-heat"><i data-heat></i><span data-heat-label>CHAUFFE 0%</span></div>
+          <div class="hud-row"><span class="hp">♥♥♡</span><span data-deaths>☠ 0</span><span data-chrono>00:00.00</span></div>
+        </div>
+        <div class="hud-stage">FORTERESSE DE BRAISE</div>
+        <div class="hud-mode" data-mode-label hidden></div>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="meta-text">
+        <h2 id="t-forge">Forteresse de braise</h2>
+        <p class="pitch">Un château en flammes au pied de deux volcans, gardé par un oni de basalte qui respire au ralenti.</p>
+        <ul class="notes">
+          <li><span class="tag">FOND</span><span>Colonne de fumée qui monte du cratère, coulées, éruptions toutes les 3 s, ville en feu au loin, flèches enflammées qui traversent le ciel. L'oni bouge la mâchoire, souffle de la fumée par les naseaux, ses veines battent.</span></li>
+          <li><span class="tag">DÉCOR</span><span>Toits en feu et bannières sur les murs du château, cloche de temple qui se balance, brasero, chutes de lave qui sortent des remparts, braises qui montent, cendres qui tombent.</span></li>
+          <li><span class="tag">LECTURE</span><span>Tout le niveau est chaud, le perso reste froid : l'écharpe cyan est la complémentaire de la palette. La brume de chaleur déforme le décor au-dessus de la lave, jamais les ennemis ni le perso.</span></li>
+          <li><span class="tag">JEU</span><span>Rempart à arête claire : accrochable. Obsidienne à reflets violets : lisse. Lave et masse d'armes à pointes rouges : mortelles. La masse pend sous l'échafaudage, loin de la trajectoire du perso.</span></li>
+        </ul>
+      </div>
+      <div class="side">
+        <div class="modes" role="group" aria-label="Affichage de la planche Forteresse de braise">
+          <button class="mode" id="forge-game" type="button" data-mode="game" aria-pressed="true">Jeu</button>
+          <button class="mode" id="forge-values" type="button" data-mode="values" aria-pressed="false">Valeurs</button>
+          <button class="mode" id="forge-play" type="button" data-mode="play" aria-pressed="false">Couche de jeu</button>
+        </div>
+        <p class="mode-help" data-mode-help></p>
+        <ul class="swatches" data-palette></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="planche" data-scene="bambou" aria-labelledby="t-bambou">
+    <div class="frame">
+      <canvas role="img" aria-label="Bambouseraie maudite : le samouraï passe du torii de pierre à la shimenawa puis au pin tordu, un dragon de jade traverse le ciel devant la lune."></canvas>
+      <div class="hud" aria-hidden="true">
+        <div class="hud-p1">
+          <div class="hud-top"><span>J1</span><span>manette</span></div>
+          <div class="hud-speed"><b data-speed>0</b><small>px/s</small></div>
+          <div class="hud-heat"><i data-heat></i><span data-heat-label>CHAUFFE 0%</span></div>
+          <div class="hud-row"><span class="hp">♥♡♡</span><span data-deaths>☠ 0</span><span data-chrono>00:00.00</span></div>
+        </div>
+        <div class="hud-stage">BAMBOUSERAIE MAUDITE</div>
+        <div class="hud-mode" data-mode-label hidden></div>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="meta-text">
+        <h2 id="t-bambou">Bambouseraie maudite</h2>
+        <p class="pitch">Une forêt de bambous la nuit, des ruines couvertes de mousse et un ryū qui traverse le ciel devant la lune.</p>
+        <ul class="notes">
+          <li><span class="tag">FOND</span><span>Étoiles, étoile filante, lune, ryū de 62 segments avec pattes, crinière et gueule qui s'ouvre, cascade au loin, bambous qui ploient, feuilles qui tombent, lucioles.</span></li>
+          <li><span class="tag">DÉCOR</span><span>Torii de pierre brisé, bambous géants reliés par une shimenawa et ses ofuda, lianes, hitodama qui flottent dans les ruines, jizo au bavoir rouge, pin tordu.</span></li>
+          <li><span class="tag">LECTURE</span><span>Le dragon est en jade et en or, les hitodama en lavande : rien n'est cyan à part le J1. Les épines passent au-dessus de la brume, un effet ne cache jamais un danger.</span></li>
+          <li><span class="tag">JEU</span><span>Mousse claire : accrochable. Laque noire à reflets : lisse. Épines à pointe rouge : mortelles. Ancres : torii, shimenawa, portail, branche du pin.</span></li>
+        </ul>
+      </div>
+      <div class="side">
+        <div class="modes" role="group" aria-label="Affichage de la planche Bambouseraie maudite">
+          <button class="mode" id="bambou-game" type="button" data-mode="game" aria-pressed="true">Jeu</button>
+          <button class="mode" id="bambou-values" type="button" data-mode="values" aria-pressed="false">Valeurs</button>
+          <button class="mode" id="bambou-play" type="button" data-mode="play" aria-pressed="false">Couche de jeu</button>
+        </div>
+        <p class="mode-help" data-mode-help></p>
+        <ul class="swatches" data-palette></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="rules" aria-labelledby="t-rules">
+    <h2 id="t-rules">Ce qui garde le perso lisible</h2>
+    <ul class="rules-grid">
+      <li><h3>Valeur moyenne, contour noir, liseré clair</h3><p>Le perso vit dans les valeurs moyennes à claires, avec un contour presque noir doublé d'un second à 45 %, et un liseré dans la couleur de la lumière du niveau. Sur fond sombre il se détache par sa valeur, sur fond clair par son contour. La nuit, une lueur très faible le suit.</p></li>
+      <li><h3>Une teinte réservée</h3><p>Le <span class="hero-word">cyan #4fd1ff</span>, déjà la couleur du J1 dans le proto, n'apparaît que sur lui : écharpe, sangles des tongs, corde pendant le reel. Aucun décor, aucun ennemi, aucun effet ne le reprend.</p></li>
+      <li><h3>Le décor reste dans son tiers</h3><p>Les couches de fond restent dans les valeurs sombres. Seuls le perso, les arêtes accrochables et les dangers touchent les extrêmes. Le mode Valeurs sert à le vérifier d'un coup d'œil.</p></li>
+      <li><h3>Les effets passent derrière ou s'écartent</h3><p>Éclairs, brume, pluie et distorsion ne touchent pas la couche de jeu. Quand ils sont devant, ils s'écartent autour du perso.</p></li>
+      <li><h3>Un langage de surfaces commun</h3><p>Arête claire : accrochable (<code class="k">#</code>). Reflets obliques froids : lisse (<code class="k">=</code>). Pointe rouge : mortel (<code class="k">^</code>). Masque blanc : ennemi (<code class="k">e</code>, <code class="k">p</code>). Même grammaire que les tuiles de <code class="k">level.ts</code>, habillée différemment à chaque niveau.</p></li>
+      <li><h3>Le mouvement rapide appartient au jeu</h3><p>Les grands mouvements de décor restent lents. Ce qui va vite et contraste fort, c'est le perso, sa corde, sa flamme et les ennemis.</p></li>
+    </ul>
+  </section>
+
+  <section class="next" aria-labelledby="t-next">
+    <h2 id="t-next">Pour le passer dans le jeu</h2>
+    <ul>
+      <li>Ces planches montrent 40 tuiles de 16 px en largeur. Sur un écran de 1440 px, ça correspond à un zoom solo d'environ 1,1 dans le proto, contre 0,85 aujourd'hui. Au zoom actuel, une bonne partie du détail disparaît.</li>
+      <li>À cette échelle le perso fait près de 2 tuiles de haut alors que sa hitbox fait 0,7 tuile (rayon 11 px). Il faut trancher : agrandir la hitbox, ou garder la hitbox et accepter un perso plus petit et moins détaillé. Je testerais d'abord un rayon de 14 px.</li>
+      <li>Le pantin se porte tel quel dans <code class="k">src/render</code>. Il ne lit que la position, la vitesse, l'état des grappins et la chauffe, qui existent déjà dans l'état de la sim. L'écharpe et le retard des jambes restent côté rendu, le déterminisme n'est pas touché.</li>
+      <li>Une texture Pixi par couche de décor, parallaxe gérée dans <code class="k">src/render</code>. Le mode Valeurs a sa place dans le panneau de debug, pour tester chaque niveau avant de l'habiller.</li>
+      <li>Tout est procédural : ça valide la direction, le mouvement et la lisibilité, pas le rendu final. Pour la prod, il faudra un pixel artist, au moins pour le perso, les ennemis et les tuiles.</li>
+    </ul>
+  </section>
+</div>
+
+<script src="engine.js"></script>
+<script src="hero.js"></script>
+<script src="kit.js"></script>
+<script src="scene-perso.js"></script>
+<script src="scene-port.js"></script>
+<script src="scene-forge.js"></script>
+<script src="scene-bamboo.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
