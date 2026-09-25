@@ -18,6 +18,12 @@ interface PlayerBlock {
   device: HTMLElement;
 }
 
+/** Nom du niveau affiché en haut du HUD (planches : en or, à droite). */
+export interface StageLabel {
+  name: string;
+  sub: string;
+}
+
 export class Hud {
   private blocks: PlayerBlock[] = [];
   private readonly stats: HTMLElement;
@@ -26,8 +32,17 @@ export class Hud {
   private readonly complete: HTMLElement;
   private readonly message: HTMLElement;
   private readonly crosshair: HTMLElement;
+  private readonly stage: HTMLElement;
+  private readonly stageName: HTMLElement;
+  private readonly stageSub: HTMLElement;
+  private readonly modeLabel: HTMLElement;
+  private readonly card: HTMLElement;
+  private readonly cardName: HTMLElement;
+  private readonly cardSub: HTMLElement;
   private lastTextUpdate = 0;
   private bannerAllowed = true;
+  private lastTick = -1;
+  private cardPending = false;
 
   constructor(private readonly root: HTMLElement) {
     clear(root);
@@ -36,8 +51,15 @@ export class Hud {
     this.complete = h('div', { class: 'hud-complete hidden' });
     this.stats = h('div', { class: 'hud-stats', text: '' });
     this.message = h('div', { class: 'hud-message hidden' });
-    this.crosshair = h('div', { class: 'crosshair hidden' });
-    root.append(this.globalChrono, this.objective, this.complete, this.stats, this.message, this.crosshair);
+    this.crosshair = h('div', { class: 'crosshair hidden' }, h('i'), h('i'), h('i'), h('i'), h('b'));
+    this.stageName = h('span', { class: 'hud-stage-name', text: '' });
+    this.stageSub = h('span', { class: 'hud-stage-sub', text: '' });
+    this.stage = h('div', { class: 'hud-stage' }, this.stageName, this.stageSub);
+    this.modeLabel = h('div', { class: 'hud-mode hidden', text: '' });
+    this.cardName = h('div', { class: 'hud-card-name', text: '' });
+    this.cardSub = h('div', { class: 'hud-card-sub', text: '' });
+    this.card = h('div', { class: 'hud-card' }, this.cardName, this.cardSub);
+    root.append(this.globalChrono, this.objective, this.complete, this.stats, this.message, this.stage, this.modeLabel, this.card, this.crosshair);
     for (let i = 0; i < 2; i++) {
       const speed = h('div', { class: 'hud-speed', text: '0' });
       const heatFill = h('div', { class: 'hud-heat-fill' });
@@ -63,12 +85,23 @@ export class Hud {
   }
 
   setVisible(v: boolean): void {
+    // Le HUD réapparaît (on quitte le menu) : carton-titre à la prochaine mise à jour.
+    if (v && this.root.classList.contains('hidden')) this.cardPending = true;
     this.root.classList.toggle('hidden', !v);
   }
 
   /** La bannière de fin doublonne avec l'écran de fin : on ne la montre qu'en jeu. */
   setBannerVisible(v: boolean): void {
     this.bannerAllowed = v;
+  }
+
+  /** Carton-titre : nom du niveau en grand, animation CSS de 2,6 s (rejouée à chaque appel). */
+  showCard(stage: StageLabel): void {
+    this.cardName.textContent = stage.name;
+    this.cardSub.textContent = stage.sub;
+    this.card.classList.remove('show');
+    void this.card.offsetWidth;
+    this.card.classList.add('show');
   }
 
   update(
@@ -78,10 +111,29 @@ export class Hud {
     settings: Settings,
     mouse: { x: number; y: number; visible: boolean },
     renderMs = 0,
+    stage: StageLabel | null = null,
+    modeText = '',
   ): void {
     const now = performance.now();
     const textTick = now - this.lastTextUpdate > 50; // 20 Hz pour le texte, la barre de chauffe chaque frame
     if (textTick) this.lastTextUpdate = now;
+    this.root.classList.toggle('two-players', state.playerCount === 2);
+    // Nouvelle manche (le tick repart de zéro) : carton-titre du niveau, qui s'efface tout seul.
+    if (state.tick < this.lastTick) this.cardPending = true;
+    this.lastTick = state.tick;
+    if (stage && this.cardPending) {
+      this.cardPending = false;
+      this.showCard(stage);
+    }
+    if (textTick) {
+      this.stage.classList.toggle('hidden', !stage);
+      if (stage) {
+        if (this.stageName.textContent !== stage.name) this.stageName.textContent = stage.name;
+        if (this.stageSub.textContent !== stage.sub) this.stageSub.textContent = stage.sub;
+      }
+      this.modeLabel.classList.toggle('hidden', !modeText);
+      if (this.modeLabel.textContent !== modeText) this.modeLabel.textContent = modeText;
+    }
 
     for (let i = 0; i < 2; i++) {
       const b = this.blocks[i];

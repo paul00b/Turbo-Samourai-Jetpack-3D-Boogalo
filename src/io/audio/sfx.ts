@@ -16,6 +16,17 @@ interface Loop {
   level: number;
 }
 
+/**
+ * Délai entre l'accroche (tick de la sim) et l'arrivée du grappin À L'ÉCRAN, pour que le « clac »
+ * tombe avec l'image : même vol que render/art/ropeFx.ts (1700 px d'art/s = 3400 px monde/s,
+ * borné à 35-140 ms). Dupliqué pour garder la couche IO étanche au rendu ; `test/art.test.ts`
+ * vérifie que les deux restent égaux.
+ */
+export function hookFlightDelay(worldDist: number): number {
+  const t = worldDist / 3400;
+  return t < 0.035 ? 0.035 : t > 0.14 ? 0.14 : t;
+}
+
 export class Sfx {
   private reelLoops: (Loop | null)[] = [null, null];
   private jetLoops: (Loop | null)[] = [null, null];
@@ -105,20 +116,21 @@ export class Sfx {
     this.tone('square', 1100, 320, 0.09, 0.08);
   }
 
-  hookHit(onPlayer: boolean): void {
+  /** `delay` : le temps que le grappin met à arriver à l'écran (voir hookFlightDelay). */
+  hookHit(onPlayer: boolean, delay = 0): void {
     if (onPlayer) {
-      this.tone('triangle', 620, 520, 0.14, 0.2);
-      this.tone('sine', 930, 930, 0.12, 0.1, { delay: 0.02 });
+      this.tone('triangle', 620, 520, 0.14, 0.2, { delay });
+      this.tone('sine', 930, 930, 0.12, 0.1, { delay: delay + 0.02 });
     } else {
-      this.tone('triangle', 1900, 1750, 0.16, 0.18);
-      this.tone('sine', 2850, 2700, 0.09, 0.08);
-      this.noiseBurst(0.03, 0.15, { type: 'highpass', f0: 3000 });
+      this.tone('triangle', 1900, 1750, 0.16, 0.18, { delay });
+      this.tone('sine', 2850, 2700, 0.09, 0.08, { delay });
+      this.noiseBurst(0.03, 0.15, { type: 'highpass', f0: 3000, delay });
     }
   }
 
-  hookMiss(): void {
-    this.tone('sine', 260, 120, 0.13, 0.12);
-    this.noiseBurst(0.05, 0.06, { type: 'lowpass', f0: 600 });
+  hookMiss(delay = 0): void {
+    this.tone('sine', 260, 120, 0.13, 0.12, { delay });
+    this.noiseBurst(0.05, 0.06, { type: 'lowpass', f0: 600, delay });
   }
 
   hookDetach(): void {
@@ -183,34 +195,49 @@ export class Sfx {
 
   // ------------------------------------------------------------------ boucles
 
+  /**
+   * Reel : une corde qui s'enroule. Bruit filtré (le frottement de la corde), battu par un cliquet
+   * doux (la bobine qui tourne). Pas d'oscillateur tonal, rien sous 500 Hz : ça reste discret sous
+   * le jetpack. Le volume est piloté par la vitesse de rétraction réelle (voir update) : corde
+   * rentrée à fond ou bloquée, silence.
+   */
   private ensureReel(i: number): Loop | null {
     const ctx = this.ctx;
     const out = this.out();
-    if (!ctx || !out) return null;
+    const buf = this.engine.noiseBuffer();
+    if (!ctx || !out || !buf) return null;
     let loop = this.reelLoops[i];
     if (loop) return loop;
-    const osc = ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.value = 120;
-    const osc2 = ctx.createOscillator();
-    osc2.type = 'square';
-    osc2.frequency.value = 30; // "cliquet"
-    const ring = ctx.createGain();
-    ring.gain.value = 0.5;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 900;
-    filter.Q.value = 2;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buf;
+    noise.loop = true;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 1300;
+    band.Q.value = 1.3;
+    const high = ctx.createBiquadFilter();
+    high.type = 'highpass';
+    high.frequency.value = 500;
+    // Cliquet : un triangle lent module l'amplitude du frottement (0,1 à 1).
+    const spool = ctx.createGain();
+    spool.gain.value = 0.55;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'triangle';
+    lfo.frequency.value = 10;
+    const depth = ctx.createGain();
+    depth.gain.value = 0.45;
+    lfo.connect(depth);
+    depth.connect(spool.gain);
     const gain = ctx.createGain();
     gain.gain.value = 0;
-    osc.connect(filter);
-    osc2.connect(ring);
-    ring.connect(filter);
-    filter.connect(gain);
+    noise.connect(band);
+    band.connect(high);
+    high.connect(spool);
+    spool.connect(gain);
     gain.connect(out);
-    osc.start();
-    osc2.start();
-    loop = { gain, filter, osc, osc2, active: false, level: 0 };
+    noise.start(0, Math.random() * 1.5);
+    lfo.start();
+    loop = { gain, filter: band, osc: lfo, noise, active: false, level: 0 };
     this.reelLoops[i] = loop;
     return loop;
   }
@@ -244,8 +271,11 @@ export class Sfx {
     return loop;
   }
 
-  /** Événements d'un tick simulé pour la première fois (jamais ceux d'une re-simulation). */
-  handleEvents(events: readonly SimEvent[]): void {
+  /**
+   * Événements d'un tick simulé pour la première fois (jamais ceux d'une re-simulation). `state` :
+   * l'état après ce tick, pour caler le « clac » d'accroche sur l'arrivée du grappin à l'écran.
+   */
+  handleEvents(events: readonly SimEvent[], state?: GameState): void {
     if (!this.ctx) return;
     for (let i = 0; i < events.length; i++) {
       const e = events[i];
@@ -254,11 +284,13 @@ export class Sfx {
           this.hookFire();
           break;
         case 'hookHit':
-          this.hookHit(e.value === 1);
+        case 'hookMiss': {
+          const pl = state?.players[e.player];
+          const delay = pl ? hookFlightDelay(Math.hypot(e.x - pl.x, e.y - pl.y)) : 0;
+          if (e.type === 'hookHit') this.hookHit(e.value === 1, delay);
+          else this.hookMiss(delay);
           break;
-        case 'hookMiss':
-          this.hookMiss();
-          break;
+        }
         case 'hookDetach':
           this.hookDetach();
           break;
@@ -322,7 +354,8 @@ export class Sfx {
       const pl = state.players[i];
       const reel = this.reelLoops[i];
       if (reel) {
-        // Vitesse de rétraction réelle du tick (0 si la corde est bloquée en longueur mini / contre un mur).
+        // Vitesse de rétraction réelle du tick : 0 quand la corde est rentrée à fond (longueur mini)
+        // ou bloquée, et alors plus aucun son (l'ancien ronflement de corde rentrée a disparu).
         let rate = 0;
         let anyReeling = false;
         for (let h = 0; h < 2; h++) {
@@ -332,14 +365,13 @@ export class Sfx {
             rate = Math.max(rate, hk.reelDelta * 60);
           }
         }
-        const target = reel.active && anyReeling ? 0.12 : 0;
-        reel.level += (target - reel.level) * Math.min(1, dtReal * 18);
-        reel.gain.gain.setTargetAtTime(reel.level, t, 0.02);
-        const norm = Math.min(1.5, rate / Math.max(1, p.reelSpeed));
-        const f = 90 + 220 * norm;
-        reel.osc?.frequency.setTargetAtTime(f, t, 0.03);
-        reel.osc2?.frequency.setTargetAtTime(18 + 40 * norm, t, 0.03);
-        reel.filter.frequency.setTargetAtTime(500 + 1400 * norm, t, 0.03);
+        const norm = Math.min(1, rate / Math.max(1, p.reelSpeed));
+        const target = reel.active && anyReeling && rate > 1 ? 0.05 * Math.pow(norm, 0.6) : 0;
+        reel.level += (target - reel.level) * Math.min(1, dtReal * 20);
+        reel.gain.gain.setTargetAtTime(reel.level, t, 0.025);
+        // Plus la corde file, plus le frottement est brillant et le cliquet rapide.
+        reel.filter.frequency.setTargetAtTime(900 + 1100 * norm, t, 0.05);
+        reel.osc?.frequency.setTargetAtTime(7 + 15 * norm, t, 0.05);
       }
       const jet = this.jetLoops[i];
       if (jet) {

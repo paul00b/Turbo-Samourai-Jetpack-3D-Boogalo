@@ -4,18 +4,20 @@ Jeu 2D de mouvement basé sur la physique : un personnage qui marche à peine (t
 indépendants et un jetpack orientable. La vitesse est l'outil principal et la cause de mort principale.
 
 Cette V1 sert à **valider le feel** et à **poser une architecture déterministe** compatible plus tard
-avec leaderboard, replays fantômes et netcode rollback. Pas de contenu, pas de progression, grey-box.
+avec leaderboard, replays fantômes et netcode rollback. Pas de contenu, pas de progression. Depuis la
+branche `Design-V1`, le jeu porte la direction artistique des planches (pixel art calculé en code, trois
+thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](#rendu-pixel-design-v1)).
 
 ## Lancer
 
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 35 tests : déterminisme, snapshot/rollback, physique, garde-fou statique
+npm test             # 255 tests : déterminisme, rollback, physique, réseau, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
-Stack : TypeScript, Vite 7, PixiJS 8 (WebGL forcé), Web Audio API native. Aucun asset : sons synthétisés, formes vectorielles.
+Stack : TypeScript, Vite 7, PixiJS 8 (WebGL forcé), Web Audio API native. Aucun asset : sons synthétisés, pixel art calculé en code (le moteur des planches), polices DotGothic16 et Zen Kaku Gothic New (Google Fonts, repli en police système hors ligne).
 
 ## Architecture : trois couches étanches
 
@@ -35,7 +37,8 @@ src/app      Orchestration : Game (le seul endroit où les couches se touchent) 
   juste sous la vitesse max de 2600 px/s : seuls les impacts presque à fond tuent.
   En dessous, on rebondit. Les pics tuent quelle que soit la vitesse, d'où leur cantonnement à la cave.
 - **Grappin** : par défaut on reste accroché tant que le bouton est maintenu, la corde se rétracte
-  automatiquement pendant ce maintien, et relâcher lâche (`holdToAttach`). La touche reel dédiée reste
+  automatiquement pendant ce maintien, et relâcher lâche (`holdToAttach`). La rétraction s'arrête à
+  120 px de l'ancre (`minRopeLength`, ~4 tuiles) : on reste suspendu sous elle, sans s'y coller. La touche reel dédiée reste
   utilisable mais n'ajoute rien dans ce mode. Suspendu, gauche/droite pompe le balancier (`swingForce`). Le toggle `holdToAttach` à 0 rend le comportement de la spec d'origine
   (maintien = reel, relâcher garde la corde, second appui = lâcher) pour comparer.
 - **Inputs** (`src/sim/input.ts`) : `{ buttons: u16 bitfield, aim: u16 }`. L'angle de visée est quantifié sur
@@ -66,7 +69,7 @@ src/app      Orchestration : Game (le seul endroit où les couches se touchent) 
 5. Aucune valeur ne dépend du deltaTime réel : le loop ne fait qu'appeler `step` N fois.
 
 Vérification cross-navigateur : bouton **Auto-test 1000 ticks** du panneau de debug. Il rejoue un
-scénario scripté et affiche un hash. Le hash de référence est `b18deb64` (test `empreinte de référence`,
+scénario scripté et affiche un hash. Le hash de référence est `60453604` (test `empreinte de référence`,
 identique sous Node/V8 et dans Chromium). Lance-le dans Firefox et Safari : il doit être identique. Si tu
 modifies la physique, mets à jour `GOLDEN_HASH` dans `test/determinism.test.ts` dans le même commit.
 
@@ -93,7 +96,7 @@ Manette : la Gamepad API ne liste une manette qu'après un premier appui, le HUD
 « appuie sur un bouton ». Les manettes non « standard » gardent le mapping par défaut en meilleur effort
 et un avertissement invite à remapper. Deadzone radiale de 0.18 avec remise à l'échelle.
 
-Raccourcis debug : **F1** panneau, **F2** mode caméra, **F3** hitboxes, **F4** vecteurs de vélocité, **F6** trail.
+Raccourcis debug : **F1** panneau, **F2** mode caméra, **F3** hitboxes, **F4** vecteurs de vélocité, **F6** trail, **F8** mode de rendu (Jeu, Valeurs, Couche de jeu, Grey-box).
 
 ## Multijoueur en ligne (sessions à code)
 
@@ -191,9 +194,13 @@ Sliders + champ numérique pour : gravité, vitesse de marche, vitesse du projec
 vitesse de reel, raideur de corde, amortissement du pendule, force du jetpack, chauffe, refroidissement,
 friction de l'air, vitesse max, seuil de mort au mur, seuil de kill d'ennemi, masse, sous-itérations de
 contrainte, sous-pas d'intégration, et quelques extras (pompage du balancier, conservation du moment angulaire au reel,
-longueur mini de corde, friction au sol, PV, fenêtres du cut manuel, respawn ennemi).
+longueur mini de corde (120 px), friction au sol, PV, fenêtres du cut manuel, respawn ennemi).
 
 Toggles : ennemis, ennemis létaux, cut auto/manuel, maintien = accroché, 1/2 joueurs, mode caméra, hitboxes, vecteurs, trail.
+
+En tête du panneau, la section **Rendu** règle le mode (Jeu, Valeurs, Couche de jeu, Grey-box), le thème
+(auto ou forcé) et les pixels entiers. Elle affiche aussi le nuancier du thème affiché et les chronos du
+rendu pixel et de la cuisson.
 
 Persistance localStorage (`tsj.params.v1`, `tsj.settings.v1`). **Exporter JSON** télécharge et copie une
 config complète (params + seed + options de rendu), **Importer JSON** l'applique. Les params
@@ -279,8 +286,13 @@ rejoué à la place du vrai une minute plus tard.
 
 Tout est synthétisé dans `src/io/audio/sfx.ts` (oscillateurs, bruit blanc généré en code, filtres,
 enveloppes). One-shots : tir, accroche, échec, détache, surchauffe, impact mortel, kill d'ennemi, dégâts,
-respawn, atterrissage, menu. Boucles : reel (pitch lié à la vitesse de rétraction réelle du tick) et jetpack
-(volume et filtre liés à la poussée et à la chauffe). L'AudioContext est débloqué au premier clic ou à la
+respawn, atterrissage, menu. Le « clac » d'accroche (et le bruit sourd d'un raté) est retardé du temps
+de vol du grappin à l'écran (35 à 140 ms selon la distance) pour tomber avec l'image. Boucles : reel et
+jetpack (volume et filtre liés à la poussée et à la chauffe). Le reel est une corde qui s'enroule : un
+frottement de bruit filtré (rien sous 500 Hz, aucun oscillateur tonal) battu par un cliquet doux de
+bobine. Son volume, sa brillance et la cadence du cliquet suivent la vitesse de rétraction réelle du
+tick : discret, et muet dès que la corde est rentrée à fond ou bloquée (l'ancien ronflement de corde
+rentrée a disparu). L'AudioContext est débloqué au premier clic ou à la
 première touche.
 
 ## Tests
@@ -307,6 +319,20 @@ première touche.
   cours de partie, sérialisation des compteurs, texte d'objectif.
 - `test/gameFlow.test.ts` : bascule en phase `complete` et gel de la boucle, recommencer, changer de
   carte depuis l'écran de fin, « continuer à jouer » sans réinitialiser, non-réouverture de l'écran.
+- `test/art.test.ts` : la direction artistique, sous Node. Il couvre le moteur pixel (format des couleurs,
+  alpha des calques, double contour, particules), l'attribution des thèmes et l'analyse des 7 cartes.
+  Pour chaque thème et chaque carte, il vérifie les règles des planches :
+  - la couche de jeu colle aux collisions : rien hors des tuiles pleines, chaque tuile pleine peinte ;
+  - les tuiles accrochables exposées ont une arête claire, et les tuiles lisses des reflets froids ;
+  - les pointes sont rouges et chaque danger ressort de son sol ;
+  - aucune teinte des joueurs n'apparaît dans le décor, et le décor arrière reste sombre ;
+  - les accessoires restent dans la carte.
+
+  S'y ajoutent le pantin (pieds posés, teintes réservées, deux cordes, écharpe stable à pleine vitesse),
+  l'animation des cordes (vol à la vitesse des planches, étincelles à l'arrivée, retour d'un raté, corde
+  lâchée qui rentre, recalage sur la sim après une mort ou un rollback, « clac » calé sur le vol dessiné),
+  la corde physique (droite tendue, chaînette avec du mou, inertie, pose sur les tuiles, retour dans la
+  main, figée en pause, mou pris dans la sim, trait pixel perfect) et la planche de l'ashigaru.
 - `test/math.test.ts`, `test/no-forbidden-math.test.ts`.
 
 ## Direction artistique (planches)
@@ -315,11 +341,122 @@ première touche.
 d'Umibozu, Forteresse de braise, Bambouseraie maudite) et un gros plan du samouraï, rendus en direct en
 640 × 360 sur canvas. Sous chaque planche, le mode **Valeurs** (niveaux de gris) et le mode **Couche de jeu**
 (décor coupé) servent à vérifier que le perso reste lisible. Ouvrir le fichier dans un navigateur suffit,
-aucun build. Tout est procédural : ça valide la direction et le mouvement, pas le rendu final.
+aucun build. Tout est procédural : ça valide la direction et le mouvement, pas le rendu final. Le jeu
+implémente désormais cette direction (section suivante) ; les planches restent la référence.
+
+## Rendu pixel (Design V1)
+
+Le jeu dessine la direction artistique des planches avec leur propre moteur, porté en TypeScript :
+`src/render/pixel/engine.ts` (framebuffer 32 bits, primitives entières, tramage Bayer, bruit, contour
+automatique) et `kit.ts` (bois, pierre, surfaces lisses, pieux, bannières, lanternes, nuages), à
+l'identique de `design/planches/engine.js` et `kit.js`. Aucun fichier image.
+
+**Chaîne de rendu** (`src/render/art/`)
+
+- Chaque vue est rendue dans une RenderTexture **à la résolution de l'art** : 1 px d'art = 2 px monde,
+  une tuile = 16 px d'art, la densité exacte des planches. La caméra est calée au pixel d'art, comme dans
+  les planches, puis `PixelQuad` agrandit l'image à l'écran en « sharp bilinear » : chaque pixel d'art
+  reste un bloc net, seuls ses bords sont lissés sur un pixel écran. Le reste sous-pixel de la caméra est
+  passé au quad : le défilement reste fluide. Le mode Valeurs est appliqué dans ce même shader.
+- Zoom solo par défaut à 1,25 (2,5 px écran par px d'art). L'option **Pixels entiers** cale les zooms
+  fixes (solo, split) sur le nombre entier de pixels écran par pixel d'art le plus proche. Pour le zoom
+  solo, cela donne 3 px sur un écran à 100 % (zoom effectif 1,5), 3 px à 125 % (1,2), 4 px à 150 %
+  (1,33) et 5 px à 200 % (1,25). Le zoom dynamique à deux joueurs reste continu (au plus 0,9), et le
+  « sharp bilinear » évite le scintillement.
+- `ArtWorld`, partagé entre les vues : cuisson de la carte par le peintre du thème en quatre calques
+  découpés en tuiles de texture de 512 px (décor arrière, tuiles de jeu, dangers, décor avant), pantins,
+  particules, planche de sprites de l'ashigaru. `ArtView`, une par viewport : couches, parallaxe,
+  accessoires animés, cordes, particules. Ordre : fond du thème, décor arrière, accessoires, tuiles,
+  brumes du thème, dangers, traînée, ennemis, halo, cordes, joueurs, particules, décor avant, premier
+  plan du thème (pluie, braises : ils s'écartent du perso).
+- Événements de la sim (accroche, échec, mort, kill, coup, atterrissage, surchauffe, fin de niveau) :
+  étincelles, éclats, coup de lame, poussière, fumée. Les débris retombent et se couchent sur les tuiles.
+
+**Le samouraï** (`hero.ts`) : le pantin des planches, redessiné pixel par pixel à chaque frame depuis son
+squelette, mais piloté par l'état de la sim (position interpolée, vitesse, deux grappins, chauffe, sol,
+visée) au lieu de son contrôleur automatique. Ajouts : une main par corde, marche en tongs, glissade au sol
+au-delà de 100 px/s, réception, points de visée dans la teinte du joueur, pieds posés (le dessin remonte en
+continu quand le sol approche). Écharpe en chaîne verlet (sous-échantillonnée à grande vitesse), retard des
+jambes, genoux, clignements, liseré dans la lumière du niveau, double contour : tout reste côté rendu, le
+déterminisme n'est pas touché. Le perso fait près de deux tuiles de haut pour une hitbox de 0,7 tuile
+(rayon 11 px) : la hitbox couvre son bassin et ses jambes. Les planches suggéraient d'essayer un rayon de
+14 px ; c'est un réglage de gameplay (`playerRadius`, panneau DEBUG), il n'est pas changé ici.
+
+**Les cordes** (`ropeFx.ts`, dessinées au pixel près par `ArtView`) : l'animation de `design/planches`.
+Le grappin vole de la main jusqu'à l'ancre à 1700 px d'art/s, pointe blanche et pixel de traîne, et
+fait des étincelles en arrivant. Accrochée, la corde est en chanvre, prend la teinte du joueur tant
+qu'elle raccourcit vraiment (rentrée à 120 px, elle redevient chanvre), et sa pointe clignote sur
+l'ancre. Deux gestes absents des planches : un raté file jusqu'au point touché, fait un éclat terne et
+revient ; une corde lâchée rentre dans la main. La sim accroche dès le tick du tir : l'envol (35 à
+140 ms) est purement visuel, et l'état de la sim fait foi (mort, respawn ou rollback : aucune corde
+fantôme).
+
+**Une vraie corde** (`ropeChain.ts`) : à l'écran, la corde est une chaîne de 25 points simulée (PBD :
+gravité, inertie, frottement de l'air, 2 sous-pas par frame à 60 Hz), tenue à la main et au grappin. Côté
+rendu seulement : la corde de la sim reste rigide et déterministe.
+
+- Tendue (la sim tire), elle est droite, exactement comme la contrainte de la sim.
+- Avec du mou, elle pend en chaînette, traîne derrière le perso, se tord et fait des boucles quand il
+  bouge, puis se calme. Le mou vient de la sim (sa corde part du centre du perso) : la main, plus près
+  ou plus loin de l'ancre selon le bras, n'en invente pas.
+- Comme une vraie corde, elle ne résiste qu'à l'étirement : comprimée, elle plie ou s'entasse. Molle,
+  elle se pose sur les tuiles (sol, corniches) au lieu de les traverser, et traîne au sol si le perso
+  marche. Tendue, elle traverse les murs comme celle de la sim.
+- Lâchée, son bout libre suit la corde que la main ravale.
+- Tracé au pixel près : un trait d'un pixel d'un seul tenant, sans « coins en L ».
+
+Quatre cordes molles posées au sol coûtent environ 0,1 ms par frame.
+
+**Teintes réservées** : cyan #4fd1ff pour le J1 (comme dans le proto), rose #ff6ec7 pour le J2. L'orange du
+proto se noyait dans la forteresse et dans toutes les lanternes. Aucun décor ne les emploie : c'est testé.
+
+**Grammaire commune** à tous les thèmes, habillée différemment : arête claire = accrochable (`#`), reflets
+obliques froids = lisse (`=`), pointe rouge = mortel (`^`), masque blanc = ennemi. Le décor reste dans les
+valeurs sombres ; seuls le perso, les arêtes accrochables et les dangers touchent les extrêmes. Un effet
+ne cache jamais un danger, et ce qui passe devant s'écarte du perso.
+
+**Thèmes** (`src/render/art/themes/`). Chaque niveau des planches est devenu un thème capable d'habiller
+n'importe quelle carte. Il se compose d'un peintre pur (`paint.ts`, testé sous Node), qui cuit les calques à
+partir de l'analyse de la carte (`levelShape.ts` : régions, faces exposées, sol principal, cave, blocs
+flottants, pics, arrivée), et d'un runtime Pixi par vue (`runtime.ts` : fond vivant, parallaxe
+horizontale et verticale, météo).
+
+| Thème | Cartes (auto) | Accrochable | Lisse | Mortel | Fond vivant |
+|---|---|---|---|---|---|
+| **Port d'Umibozu** | Facile, Sprint | bois : pontons, défenses, solives, poutres de cargaison sur poulies | pierre mouillée | pieux dans l'eau noire | orage à double éclair, jonques, mouettes, Umibozu qui suit le perso des yeux et frappe l'eau, mer calculée par pixel |
+| **Forteresse de braise** | Difficile, Horrible, Autoroute | rempart à arêtes chaudes, poutres cerclées et échafaudages pendus à des chaînes | obsidienne à reflets violets | pics de fer sur fosses de lave | volcans et éruptions, oni de basalte, ville et château en feu, flèches enflammées, brume de chaleur (fond seulement) |
+| **Bambouseraie maudite** | Normale, Gouffre | pierre moussue : linteaux, planches liées aux bambous, kasagi | laque noire | épines | étoiles, lune, ryū de jade, cascade, bambous qui ploient, lucioles, hitodama, brume maudite (sous les épines) |
+
+Les caves ont leur propre décor (dessous du ponton, cachot voûté, ruines à arcades). L'arrivée des cartes
+chrono est un torii propre à chaque thème, sous un voile de lumière. Le thème se force dans le panneau
+(DEBUG, section Rendu). La lave et les fosses ne sont peintes que sur les tuiles `^` : un sol sans pics
+reste lisiblement sûr.
+
+**Coût** mesuré en vue 1080p (~960 x 540 px d'art) dans Chrome headless en rendu logiciel, donc majoré :
+pantins et particules ~0,5 ms par frame, runtime du thème de 0,8 ms (forteresse) à 1,4 ms (port,
+bambouseraie), préparation des couches ~0,1 ms. Cuisson d'une carte : 50 à 180 ms, au chargement ou au
+changement de thème. Le panneau affiche ces chronos en direct.
+
+**Ajouter un thème** : un dossier `src/render/art/themes/<id>/` avec `palette.ts`, `paint.ts` et
+`painter.ts` purs (aucun import de Pixi), plus `runtime.ts` et `index.ts`, puis l'inscrire dans
+`painters.ts` et `index.ts`. `test/art.test.ts` le vérifie aussitôt sur les 7 cartes.
+
+**Modes de rendu** (panneau DEBUG, section Rendu, ou **F8**) : **Jeu** ; **Valeurs** (six niveaux de gris :
+le perso doit rester la forme la plus nette) ; **Couche de jeu** (décor coupé, arrivée marquée : ce qui
+reste est tout ce qui compte pour jouer) ; **Grey-box** (le rendu vectoriel du proto, pour comparer).
+
+**HUD et menus** : typographie et palette de la page des planches (DotGothic16, Zen Kaku Gothic New),
+bloc joueur à bord de sa teinte, vitesse en vert au-dessus du seuil de kill et en rouge au-dessus du seuil
+de mort, nom du niveau en or, carton-titre en début de manche. Le niveau vit derrière les menus : le décor
+continue de s'animer en pause.
 
 ## Limites connues de la V1
 
-- Les cordes traversent les murs (pas d'enroulement autour des coins).
+- Les cordes de la sim traversent les murs (pas d'enroulement autour des coins). À l'écran, seule une
+  corde molle se pose sur les tuiles.
 - Pas de collision joueur-joueur (seulement la corde entre eux).
 - Le feel dépend des valeurs par défaut de `DEFAULT_PARAMS` : elles sont un point de départ, pas un réglage final.
-- Aucun art dans le jeu : grey-box volontaire (la DA est explorée à part dans `design/planches`).
+- Le samouraï fait près de deux tuiles de haut pour une hitbox de 0,7 tuile : sa tête peut mordre un
+  plafond au contact (le dessin se décale pour l'éviter en vol libre, pas quand il est accroché).
+- L'art est procédural : il valide la direction, le mouvement et la lisibilité, pas le rendu final.
+  Pour la prod, il faudra un pixel artist, au moins pour le perso, les ennemis et les tuiles.

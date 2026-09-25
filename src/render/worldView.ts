@@ -50,15 +50,25 @@ export class WorldView {
   private readonly fxG = new Graphics();
   private readonly debug = new Graphics();
 
-  constructor(level: Level) {
-    this.root.addChild(this.tiles, this.labels, this.trail, this.enemies, this.ropes, this.players, this.fxG, this.debug);
+  /**
+   * `overlay` : vue réduite aux aides de debug (hitboxes, vecteurs, notes de level design), posée
+   * par-dessus le rendu pixel. Sinon, le grey-box complet du proto.
+   */
+  constructor(
+    level: Level,
+    private readonly overlay = false,
+  ) {
+    if (overlay) this.root.addChild(this.labels, this.debug);
+    else this.root.addChild(this.tiles, this.labels, this.trail, this.enemies, this.ropes, this.players, this.fxG, this.debug);
     this.setLevel(level);
   }
 
   /** Tuiles et libellés : dessinés une fois par carte (grey-box statique). */
   setLevel(level: Level): void {
-    this.drawTiles(level);
-    this.drawGoal(level);
+    if (!this.overlay) {
+      this.drawTiles(level);
+      this.drawGoal(level);
+    }
     this.labels.removeChildren().forEach((c) => c.destroy());
     for (const l of level.labels) {
       const t = new Text({
@@ -142,6 +152,12 @@ export class WorldView {
   }
 
   draw(state: GameState, poses: PlayerPose[], opts: DrawOptions, trails: TrailBuffer[], fx: Fx, zoom: number): void {
+    if (this.overlay) {
+      // Sur le rendu pixel, les notes de level design ne s'affichent qu'avec les hitboxes (F3).
+      this.labels.visible = opts.showHitboxes;
+      this.drawDebug(state, poses, opts);
+      return;
+    }
     this.drawTrails(state, trails, opts);
     this.drawEnemies(state, opts);
     this.drawRopes(state, poses);

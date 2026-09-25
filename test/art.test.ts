@@ -1,0 +1,635 @@
+/**
+ * Direction artistique : les règles des planches (design/planches/index.html, « Ce qui garde le
+ * perso lisible ») vérifiées sur les 7 cartes et pour chaque thème. Tout ce qui est testé ici est
+ * pur (aucun Pixi) : moteur pixel, analyse de carte, peintres, pantin, planche de l'ashigaru.
+ */
+import { describe, expect, it, vi } from 'vitest';
+
+// Cuisson de cartes jusqu'à 6720 px d'art de large : on laisse le temps aux tests lourds.
+vi.setConfig({ testTimeout: 30000 });
+import { LEVELS, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE } from '../src/sim';
+import { Buf, C, ca, cb, cr, luma, Particles } from '../src/render/pixel/engine';
+import { analyzeLevel, ART_TILE, exposedFaces, type LevelShape } from '../src/render/art/levelShape';
+import { LEVEL_THEMES, PAINTERS, THEME_IDS, themeIdFor } from '../src/render/art/themes/painters';
+import type { LevelCanvases, ThemePainter } from '../src/render/art/themes/types';
+import { ENEMY_PAL, HERO_PALETTES, OUTLINE, RESERVED_COLORS } from '../src/render/art/palette';
+import { HERO_BUF, HeroPuppet, HOOK_VIEW_ATTACHED, makeHeroInput } from '../src/render/art/hero';
+import { buildEnemySheet } from '../src/render/art/enemySheet';
+import { MISS_BACK, RopeBank, THROW_SPEED, throwDuration } from '../src/render/art/ropeFx';
+import { RopeChain, ropePixels, type RopeGround } from '../src/render/art/ropeChain';
+import { hookFlightDelay } from '../src/io/audio/sfx';
+import { createInitialState, HOOK_ATTACHED, type SimEvent } from '../src/sim';
+
+const RESERVED = new Set<number>(RESERVED_COLORS.map((c) => c & 0xffffff));
+
+interface Painted {
+  shape: LevelShape;
+  canvases: { back: Buf; tiles: Buf; hazards: Buf; front: Buf | null };
+  props: ReturnType<ThemePainter['paint']>;
+}
+
+const cache = new Map<string, Painted>();
+
+function paint(painter: ThemePainter, levelId: number): Painted {
+  const key = `${painter.id}:${levelId}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const shape = analyzeLevel(LEVELS[levelId]);
+  let front: Buf | null = null;
+  const canvases: LevelCanvases = {
+    back: new Buf(shape.pw, shape.ph),
+    tiles: new Buf(shape.pw, shape.ph),
+    hazards: new Buf(shape.pw, shape.ph),
+    front: () => (front ??= new Buf(shape.pw, shape.ph)),
+  };
+  const props = painter.paint(shape, canvases);
+  const out: Painted = { shape, canvases: { back: canvases.back, tiles: canvases.tiles, hazards: canvases.hazards, front }, props };
+  cache.set(key, out);
+  return out;
+}
+
+function tileAtPx(shape: LevelShape, x: number, y: number): number {
+  return shape.level.tiles[Math.floor(y / ART_TILE) * shape.w + Math.floor(x / ART_TILE)];
+}
+
+/** Thèmes distincts (les thèmes provisoires qui reprennent un autre peintre ne sont testés qu'une fois). */
+const PAINTER_LIST: ThemePainter[] = THEME_IDS.map((id) => PAINTERS[id]).filter((p, i, all) => all.findIndex((q) => q.paint === p.paint) === i);
+
+describe('moteur pixel', () => {
+  it('les couleurs sont en ABGR little-endian (uploadables telles quelles en RGBA)', () => {
+    const b = new Buf(1, 1);
+    b.px(0, 0, C('#4fd1ff'));
+    expect([...new Uint8Array(b.d.buffer)]).toEqual([0x4f, 0xd1, 0xff, 0xff]);
+  });
+
+  it('mixA pose un alpha partiel sur un calque vide et mélange sur un pixel plein', () => {
+    const b = new Buf(2, 1);
+    b.mixA(0, 0, C('#ffffff'), 0.45);
+    expect(ca(b.d[0])).toBe(Math.round(0.45 * 255));
+    b.px(1, 0, C('#000000'));
+    b.mixA(1, 0, C('#ffffff'), 0.5);
+    expect(ca(b.d[1])).toBe(255);
+    expect(cr(b.d[1])).toBeGreaterThan(120);
+    expect(cr(b.d[1])).toBeLessThan(135);
+  });
+
+  it('outlineBlit en mode calque : contour plein puis second contour à 45 %', () => {
+    const src = new Buf(9, 9);
+    src.px(4, 4, C('#ffffff'));
+    const dst = new Buf(9, 9);
+    dst.outlineBlit(src, 0, 0, OUTLINE, true);
+    expect(dst.d[4 * 9 + 5]).toBe(OUTLINE);
+    expect(ca(dst.d[4 * 9 + 6])).toBe(Math.round(0.45 * 255));
+    expect(dst.d[0]).toBe(0);
+  });
+
+  it('les particules vieillissent le long de leur palette puis disparaissent', () => {
+    const p = new Particles();
+    p.spawn(0, 0, 10, 0, 1, [C('#ffffff'), C('#000000')]);
+    expect(Particles.colorOf(p.list[0])).toBe(C('#ffffff'));
+    p.update(0.6);
+    expect(Particles.colorOf(p.list[0])).toBe(C('#000000'));
+    p.update(0.5);
+    expect(p.list).toHaveLength(0);
+  });
+});
+
+describe('attribution des thèmes', () => {
+  it('chaque carte a un thème connu, et le réglage manuel l\'emporte', () => {
+    expect(LEVEL_THEMES).toHaveLength(LEVELS.length);
+    for (let i = 0; i < LEVELS.length; i++) {
+      expect(THEME_IDS).toContain(LEVEL_THEMES[i]);
+      expect(themeIdFor('auto', i)).toBe(LEVEL_THEMES[i]);
+      expect(themeIdFor('bamboo', i)).toBe('bamboo');
+    }
+    // Les trois niveaux des planches sont joués.
+    for (const id of THEME_IDS) expect(LEVEL_THEMES).toContain(id);
+  });
+
+  it('aucun thème ne reprend une teinte réservée aux joueurs (rim, halo, poussière)', () => {
+    for (const p of Object.values(PAINTERS)) {
+      for (const c of [p.rim, p.halo ?? 0, ...p.dust]) expect(RESERVED.has(c & 0xffffff), `${p.id} ${c.toString(16)}`).toBe(false);
+    }
+  });
+});
+
+describe('analyse des cartes', () => {
+  for (const level of LEVELS) {
+    it(`${level.name} : sol principal sous le spawn, régions complètes, tronçons du sol classés en sol`, () => {
+      const shape = analyzeLevel(level);
+      expect(shape.floorRow).toBe(Math.floor(level.spawnY / TILE_SIZE) + 1);
+      let solids = 0;
+      for (let i = 0; i < level.tiles.length; i++) {
+        const t = level.tiles[i];
+        if (t !== T_SOLID && t !== T_SLICK) {
+          expect(shape.regionOf[i]).toBe(-1);
+          continue;
+        }
+        solids++;
+        const r = shape.regions[shape.regionOf[i]];
+        expect(r.type).toBe(t);
+      }
+      expect(shape.regions.reduce((n, r) => n + r.count, 0)).toBe(solids);
+      for (const r of shape.regions) {
+        if (r.y0 <= shape.floorRow + 1 && r.y1 >= shape.floorRow && r.x1 - r.x0 >= 2) expect(r.kind, `${level.name} région ${r.id}`).toBe('frame');
+      }
+      const spikes = level.tiles.reduce((n, t) => n + (t === T_SPIKE ? 1 : 0), 0);
+      expect(shape.spikes.reduce((n, s) => n + s.x1 - s.x0 + 1, 0)).toBe(spikes);
+    });
+  }
+});
+
+for (const painter of PAINTER_LIST) {
+  describe(`thème ${painter.name}`, () => {
+    for (const [id, level] of LEVELS.entries()) {
+      describe(level.name, () => {
+        it('la couche de jeu colle aux collisions : rien hors des tuiles pleines, chaque tuile pleine est peinte', () => {
+          const { shape, canvases } = paint(painter, id);
+          const tiles = canvases.tiles;
+          let outside = 0;
+          for (let y = 0; y < tiles.h; y++) {
+            for (let x = 0; x < tiles.w; x++) {
+              if (tiles.d[y * tiles.w + x] === 0) continue;
+              const t = tileAtPx(shape, x, y);
+              if (t !== T_SOLID && t !== T_SLICK) outside++;
+            }
+          }
+          expect(outside, 'pixels de tuiles hors des tuiles pleines').toBe(0);
+          for (let ty = 0; ty < shape.h; ty++) {
+            for (let tx = 0; tx < shape.w; tx++) {
+              const t = shape.level.tiles[ty * shape.w + tx];
+              if (t !== T_SOLID && t !== T_SLICK) continue;
+              let filled = 0;
+              for (let y = ty * ART_TILE; y < (ty + 1) * ART_TILE; y++) {
+                for (let x = tx * ART_TILE; x < (tx + 1) * ART_TILE; x++) if (ca(tiles.d[y * tiles.w + x]) === 255) filled++;
+              }
+              expect(filled, `tuile (${tx},${ty}) peu peinte`).toBeGreaterThan(ART_TILE * ART_TILE * 0.9);
+            }
+          }
+        });
+
+        it('les dangers restent dans leurs tuiles, pointes rouges visibles', () => {
+          const { shape, canvases } = paint(painter, id);
+          const hz = canvases.hazards;
+          let outside = 0;
+          let red = 0;
+          for (let y = 0; y < hz.h; y++) {
+            for (let x = 0; x < hz.w; x++) {
+              const c = hz.d[y * hz.w + x];
+              if (c === 0) continue;
+              if (tileAtPx(shape, x, y) !== T_SPIKE) outside++;
+              if (cr(c) > 180 && cr(c) - Math.max(cb(c), (c >>> 8) & 255) > 90) red++;
+            }
+          }
+          expect(outside).toBe(0);
+          if (shape.spikes.length > 0) expect(red, 'pointes rouges').toBeGreaterThan(shape.spikes.length * 3);
+          // Le danger ressort de son sol : dans chaque tuile de pics, un pixel plus clair que le haut
+          // du sol qui la porte (le sol sous une fosse n'a pas d'arête claire à lui, cf. plus bas).
+          const tiles = canvases.tiles;
+          let dull = 0;
+          for (const run of shape.spikes) {
+            for (let tx = run.x0; tx <= run.x1; tx++) {
+              if (shape.level.tiles[(run.y + 1) * shape.w + tx] !== T_SOLID) continue;
+              let floorTop = 0;
+              for (let x = tx * ART_TILE; x < (tx + 1) * ART_TILE; x++) floorTop += luma(tiles.d[(run.y + 1) * ART_TILE * tiles.w + x]);
+              floorTop /= ART_TILE;
+              let brightest = 0;
+              for (let y = run.y * ART_TILE; y < (run.y + 1) * ART_TILE; y++) {
+                for (let x = tx * ART_TILE; x < (tx + 1) * ART_TILE; x++) brightest = Math.max(brightest, luma(hz.d[y * hz.w + x]));
+              }
+              if (brightest <= floorTop) dull++;
+            }
+          }
+          expect(dull, 'tuiles de pics qui ne ressortent pas de leur sol').toBe(0);
+        });
+
+        it('arête claire : le haut d\'une tuile accrochable exposée est plus clair que son cœur', () => {
+          const { shape, canvases } = paint(painter, id);
+          const tiles = canvases.tiles;
+          let checked = 0;
+          let fails = 0;
+          for (let ty = 1; ty < shape.h - 1; ty++) {
+            for (let tx = 1; tx < shape.w - 1; tx++) {
+              if (shape.level.tiles[ty * shape.w + tx] !== T_SOLID) continue;
+              if ((exposedFaces(shape, tx, ty) & 1) === 0) continue;
+              // Sous un pic, personne ne se pose : pas d'arête exigée (croûte de lave, fond d'eau…).
+              if (shape.level.tiles[(ty - 1) * shape.w + tx] === T_SPIKE) continue;
+              let top = 0;
+              let core = 0;
+              for (let x = tx * ART_TILE; x < (tx + 1) * ART_TILE; x++) {
+                top += luma(tiles.d[ty * ART_TILE * tiles.w + x]);
+                for (let y = ty * ART_TILE + 7; y < (ty + 1) * ART_TILE; y++) core += luma(tiles.d[y * tiles.w + x]);
+              }
+              top /= ART_TILE;
+              core /= ART_TILE * (ART_TILE - 7);
+              checked++;
+              if (top < core + 20) fails++;
+            }
+          }
+          expect(checked).toBeGreaterThan(0);
+          expect(fails, `${fails} / ${checked} arêtes pas assez claires`).toBe(0);
+        });
+
+        it('lisse : des reflets froids (plus bleus que rouges) sur chaque tuile lisse', () => {
+          const { shape, canvases } = paint(painter, id);
+          const tiles = canvases.tiles;
+          for (let ty = 0; ty < shape.h; ty++) {
+            for (let tx = 0; tx < shape.w; tx++) {
+              if (shape.level.tiles[ty * shape.w + tx] !== T_SLICK) continue;
+              let cold = 0;
+              for (let y = ty * ART_TILE; y < (ty + 1) * ART_TILE; y++) {
+                for (let x = tx * ART_TILE; x < (tx + 1) * ART_TILE; x++) {
+                  const c = tiles.d[y * tiles.w + x];
+                  if (cb(c) > cr(c) + 12 && luma(c) > 60) cold++;
+                }
+              }
+              expect(cold, `tuile lisse (${tx},${ty})`).toBeGreaterThan(2);
+            }
+          }
+        });
+
+        it('aucun décor n\'emploie une teinte réservée aux joueurs, le fond reste sombre', () => {
+          const { canvases } = paint(painter, id);
+          const lumas: number[] = [];
+          const hits: string[] = [];
+          for (const [name, b] of Object.entries(canvases)) {
+            if (!b) continue;
+            for (let i = 0; i < b.d.length; i++) {
+              const c = b.d[i];
+              if (c === 0) continue;
+              if (RESERVED.has(c & 0xffffff) && hits.length < 5) hits.push(`${name} ${(c & 0xffffff).toString(16)}`);
+              if (name === 'back' && ca(c) === 255 && (i & 7) === 0) lumas.push(luma(c));
+            }
+          }
+          expect(hits).toEqual([]);
+          lumas.sort((a, b) => a - b);
+          const median = lumas.length ? lumas[lumas.length >> 1] : 0;
+          expect(median, 'luminance médiane du décor arrière').toBeLessThan(70);
+        });
+
+        it('les accessoires animés sont dans la carte et connus du thème', () => {
+          const { shape, props } = paint(painter, id);
+          const anims = painter.props();
+          for (const p of props) {
+            expect(anims[p.kind], p.kind).toBeDefined();
+            expect(p.x).toBeGreaterThanOrEqual(0);
+            expect(p.x).toBeLessThanOrEqual(shape.pw);
+            expect(p.y).toBeGreaterThanOrEqual(0);
+            expect(p.y).toBeLessThanOrEqual(shape.ph);
+          }
+        });
+      });
+    }
+
+    it('les frames d\'accessoires n\'emploient aucune teinte réservée', () => {
+      for (const [kind, anim] of Object.entries(painter.props())) {
+        expect(anim.frames.length, kind).toBeGreaterThan(0);
+        let hits = 0;
+        for (const f of anim.frames) for (const c of f.d) if (c && RESERVED.has(c & 0xffffff)) hits++;
+        expect(hits, kind).toBe(0);
+      }
+    });
+  });
+}
+
+describe('le samouraï', () => {
+  const standing = (index: number): HeroPuppet => {
+    const hero = new HeroPuppet(index);
+    const inp = makeHeroInput();
+    inp.x = 100;
+    inp.y = 100;
+    inp.grounded = true;
+    inp.floorGap = 0;
+    inp.radius = 5.5;
+    const parts = new Particles();
+    for (let i = 0; i < 30; i++) hero.update(1 / 60, inp, 30, parts);
+    hero.draw(C('#a9c2ee'), 1);
+    return hero;
+  };
+
+  it('pieds posés : au sol, le bas du perso touche le bas de la hitbox', () => {
+    const hero = standing(0);
+    const out = hero.out;
+    // Plus bas pixel du corps (hors contour noir et second contour semi-transparent).
+    let lowest = -1;
+    for (let y = 0; y < HERO_BUF; y++) {
+      for (let x = 0; x < HERO_BUF; x++) {
+        const c = out.d[y * HERO_BUF + x];
+        if (c !== 0 && c !== OUTLINE && ca(c) === 255) lowest = Math.max(lowest, y);
+      }
+    }
+    const ground = 100 + 5.5 - hero.drawY;
+    expect(Math.abs(lowest + 1 - ground), `sol à ${ground}, pied à ${lowest}`).toBeLessThanOrEqual(1.5);
+  });
+
+  it('chaque joueur porte sa teinte réservée, et pas celle de l\'autre', () => {
+    for (const i of [0, 1]) {
+      const hero = standing(i);
+      const colors = new Set([...hero.out.d].map((c) => c & 0xffffff));
+      expect(colors.has(HERO_PALETTES[i].scarf & 0xffffff)).toBe(true);
+      expect(colors.has(HERO_PALETTES[1 - i].scarf & 0xffffff)).toBe(false);
+      expect(colors.has(OUTLINE & 0xffffff)).toBe(true);
+    }
+  });
+
+  it('écharpe stable à pleine vitesse : elle traîne derrière sans s\'étirer ni diverger', () => {
+    const hero = new HeroPuppet(0);
+    const inp = makeHeroInput();
+    const parts = new Particles();
+    // 2600 px monde/s (vitesse max du jeu) = 1300 px d'art/s, en zigzag, à 60 puis 30 fps.
+    for (let i = 0; i < 180; i++) {
+      const dt = i < 120 ? 1 / 60 : 1 / 30;
+      inp.vx = 1300 * Math.cos(i / 20);
+      inp.vy = 900 * Math.sin(i / 13);
+      inp.x += inp.vx * dt;
+      inp.y += inp.vy * dt;
+      inp.jet = i % 40 < 20;
+      hero.update(dt, inp, 30, parts);
+    }
+    const sc = (hero as unknown as { scarf: { x: number; y: number }[] }).scarf;
+    let len = 0;
+    for (let i = 1; i < sc.length; i++) {
+      expect(Number.isFinite(sc[i].x) && Number.isFinite(sc[i].y)).toBe(true);
+      len += Math.hypot(sc[i].x - sc[i - 1].x, sc[i].y - sc[i - 1].y);
+    }
+    // Repos : 10 segments de 1,9 px. On tolère l'étirement des contraintes, pas l'explosion.
+    expect(len).toBeLessThan(10 * 1.9 * 1.6);
+    expect(Math.hypot(sc[0].x - inp.x, sc[0].y - inp.y)).toBeLessThan(12);
+  });
+
+  it('accroché à deux ancres, chaque main tient sa corde', () => {
+    const hero = new HeroPuppet(0);
+    const inp = makeHeroInput();
+    inp.x = 200;
+    inp.y = 200;
+    inp.hooks[0].state = HOOK_VIEW_ATTACHED;
+    inp.hooks[0].x = 160;
+    inp.hooks[0].y = 140;
+    inp.hooks[1].state = HOOK_VIEW_ATTACHED;
+    inp.hooks[1].x = 250;
+    inp.hooks[1].y = 150;
+    const parts = new Particles();
+    for (let i = 0; i < 20; i++) hero.update(1 / 60, inp, 30, parts);
+    hero.draw(C('#a9c2ee'), 1);
+    const a = hero.handFor(0);
+    const b = hero.handFor(1);
+    expect(a[0]).toBeLessThan(b[0]);
+    for (const p of [a, b]) {
+      expect(Number.isFinite(p[0]) && Number.isFinite(p[1])).toBe(true);
+      expect(Math.hypot(p[0] - 200, p[1] - 200)).toBeLessThan(20);
+    }
+  });
+});
+
+describe('les cordes (animation des planches)', () => {
+  const setup = (): { bank: RopeBank; state: ReturnType<typeof createInitialState>; poses: { x: number; y: number }[]; lands: [number, number, boolean][] } => {
+    const state = createInitialState(1, 1);
+    state.players[0].x = 400;
+    state.players[0].y = 600;
+    return { bank: new RopeBank(), state, poses: [{ x: 400, y: 600 }, { x: 0, y: 0 }], lands: [] };
+  };
+  const hit = (x: number, y: number): SimEvent => ({ type: 'hookHit', tick: 1, player: 0, x, y, hook: 1, value: 0 });
+
+  it('le grappin vole jusqu\'à l\'ancre, étincelle à l\'arrivée, puis la corde est tenue', () => {
+    const { bank, state, poses, lands } = setup();
+    const hk = state.players[0].hooks[1];
+    hk.state = HOOK_ATTACHED;
+    hk.x = 400;
+    hk.y = 300;
+    bank.handleEvent(hit(400, 300), 200, 300, 2);
+    const r = bank.fx[0][1];
+    expect(r.phase).toBe('throw');
+    // 150 px d'art à 1700 px/s : un peu moins d'un dixième de seconde.
+    expect(r.dur).toBeCloseTo(150 / THROW_SPEED, 5);
+    const onLand = (x: number, y: number, miss: boolean): void => void lands.push([x, y, miss]);
+    bank.update(r.dur / 2, state, poses, 2, onLand);
+    expect(r.phase).toBe('throw');
+    expect(lands).toHaveLength(0);
+    bank.update(r.dur, state, poses, 2, onLand);
+    expect(r.phase).toBe('hold');
+    expect(lands).toEqual([[200, 150, false]]);
+    bank.update(1, state, poses, 2, onLand);
+    expect(lands).toHaveLength(1);
+  });
+
+  it('en pause rien n\'avance ; lâchée, la corde rentre dans la main puis disparaît', () => {
+    const { bank, state, poses } = setup();
+    const hk = state.players[0].hooks[1];
+    hk.state = HOOK_ATTACHED;
+    hk.x = 400;
+    hk.y = 300;
+    bank.handleEvent(hit(400, 300), 200, 300, 2);
+    bank.update(0, state, poses, 2, () => undefined);
+    expect(bank.fx[0][1].t).toBe(0);
+    bank.update(1, state, poses, 2, () => undefined);
+    hk.state = 0;
+    bank.handleEvent({ type: 'hookDetach', tick: 2, player: 0, x: 400, y: 600, hook: 1 }, 200, 300, 2);
+    expect(bank.fx[0][1].phase).toBe('retract');
+    expect(bank.fx[0][1].fromY).toBe(150);
+    bank.update(0.2, state, poses, 2, () => undefined);
+    expect(bank.fx[0][1].phase).toBe('none');
+  });
+
+  it('un raté file jusqu\'au point touché, fait un éclat terne, puis revient', () => {
+    const { bank, state, poses, lands } = setup();
+    bank.handleEvent({ type: 'hookMiss', tick: 1, player: 0, x: 600, y: 300, hook: 0 }, 200, 300, 2);
+    const r = bank.fx[0][0];
+    expect(r.phase).toBe('miss');
+    const onLand = (x: number, y: number, miss: boolean): void => void lands.push([x, y, miss]);
+    bank.update(r.dur + 0.001, state, poses, 2, onLand);
+    expect(lands).toEqual([[300, 150, true]]);
+    expect(r.phase).toBe('miss');
+    bank.update(MISS_BACK, state, poses, 2, onLand);
+    expect(r.phase).toBe('none');
+  });
+
+  it('mort ou rollback : aucune corde fantôme, et l\'état de la sim fait foi', () => {
+    const { bank, state, poses } = setup();
+    const hk = state.players[0].hooks[0];
+    hk.state = HOOK_ATTACHED;
+    hk.x = 500;
+    hk.y = 400;
+    // Accroché sans événement (rollback) : tenue directe, sans envol.
+    bank.update(1 / 60, state, poses, 2, () => undefined);
+    expect(bank.fx[0][0].phase).toBe('hold');
+    // Lâché sans événement : la corde rentre.
+    hk.state = 0;
+    bank.update(1 / 60, state, poses, 2, () => undefined);
+    expect(bank.fx[0][0].phase).toBe('retract');
+    // Mort : tout s'efface, rien ne traverse la carte jusqu'au spawn.
+    bank.handleEvent({ type: 'death', tick: 3, player: 0, x: 0, y: 0 }, 0, 0, 2);
+    expect(bank.fx[0].map((r) => r.phase)).toEqual(['none', 'none']);
+  });
+
+  it('le « clac » d\'accroche attend exactement le vol dessiné', () => {
+    for (const worldDist of [0, 60, 200, 420, 900]) expect(hookFlightDelay(worldDist)).toBeCloseTo(throwDuration(worldDist / 2), 9);
+  });
+});
+
+describe('la corde physique (rendu seulement)', () => {
+  const G = 900;
+  const settle = (c: RopeChain, seconds: number, ax: number, ay: number, bx: number, by: number, pinned: boolean, len: number, ground?: RopeGround): void => {
+    for (let k = 0; k < Math.round(seconds * 60); k++) c.step(1 / 60, ax, ay, bx, by, pinned, len, G, ground);
+  };
+  const lengthOf = (c: RopeChain): number => {
+    let s = 0;
+    for (let i = 0; i < c.n - 1; i++) s += Math.hypot(c.x[i + 1] - c.x[i], c.y[i + 1] - c.y[i]);
+    return s;
+  };
+  const lowest = (c: RopeChain): number => Math.max(...Array.from(c.y));
+
+  it('tendue (la sim tire), elle est droite d\'un bout à l\'autre', () => {
+    const c = new RopeChain();
+    c.reset(0, 0, 100, -60);
+    settle(c, 0.5, 0, 0, 100, -60, true, Math.hypot(100, 60));
+    expect(c.taut).toBe(true);
+    for (let i = 0; i < c.n; i++) {
+      const t = i / (c.n - 1);
+      expect(c.x[i]).toBeCloseTo(100 * t, 6);
+      expect(c.y[i]).toBeCloseTo(-60 * t, 6);
+    }
+  });
+
+  it('avec du mou, elle pend en chaînette, garde sa longueur et ses deux bouts', () => {
+    const c = new RopeChain();
+    c.reset(0, 0, 100, 0);
+    settle(c, 3, 0, 0, 100, 0, true, 130);
+    expect(c.taut).toBe(false);
+    expect([c.x[0], c.y[0], c.x[c.n - 1], c.y[c.n - 1]]).toEqual([0, 0, 100, 0]);
+    // Chaînette de 130 px sur 100 px : flèche théorique de 36,8 px, point bas au milieu.
+    expect(lowest(c)).toBeGreaterThan(33);
+    expect(lowest(c)).toBeLessThan(41);
+    const mid = c.y.indexOf(lowest(c));
+    expect(Math.abs(c.x[mid] - 50)).toBeLessThan(6);
+    expect(lengthOf(c)).toBeGreaterThan(127);
+    expect(lengthOf(c)).toBeLessThan(133);
+  });
+
+  it('elle a de l\'inertie : la main qui file la fait plier, puis elle se calme', () => {
+    const c = new RopeChain();
+    // Ancre en haut, main 100 px dessous, 20 px de mou.
+    c.reset(0, 100, 0, 0);
+    settle(c, 2, 0, 100, 0, 0, true, 120);
+    // La main part de côté à 600 px/s : la corde traîne derrière elle.
+    let bend = 0;
+    for (let k = 1; k <= 6; k++) {
+      const hx = 10 * k;
+      c.step(1 / 60, hx, 100, 0, 0, true, 120, G);
+      // Retard sur le segment main-ancre, du côté opposé au mouvement.
+      for (let i = 1; i < c.n - 1; i++) bend = Math.max(bend, (hx * (100 - c.y[i])) / 100 - c.x[i]);
+    }
+    expect(bend).toBeGreaterThan(4);
+    // Arrêtée, elle finit au repos.
+    settle(c, 4, 60, 100, 0, 0, true, 120);
+    const before = Array.from(c.x);
+    c.step(1 / 60, 60, 100, 0, 0, true, 120, G);
+    for (let i = 0; i < c.n; i++) expect(Math.abs(c.x[i] - before[i])).toBeLessThan(0.05);
+  });
+
+  it('molle, elle se pose sur une tuile ; tendue, elle la traverse comme la corde de la sim', () => {
+    // Un sol plein à partir de y = 112 (tuiles de 16 px).
+    const ground: RopeGround = { solid: (_x, y) => y >= 112, cell: 16 };
+    const c = new RopeChain();
+    c.reset(0, 90, 80, 110);
+    settle(c, 3, 0, 90, 80, 110, true, 220, ground);
+    // Tout le mou est posé : aucun pixel de corde dans le sol.
+    for (let i = 0; i < c.n; i++) expect(Math.round(c.y[i])).toBeLessThanOrEqual(111);
+    expect(lowest(c)).toBeGreaterThan(110);
+    // Tendue à travers le sol (la corde de la sim ignore les murs) : droite quand même.
+    c.reset(0, 90, 80, 150);
+    settle(c, 0.5, 0, 90, 80, 150, true, Math.hypot(80, 60), ground);
+    for (let i = 0; i < c.n; i++) expect(c.y[i]).toBeCloseTo(90 + (60 * i) / (c.n - 1), 6);
+  });
+
+  it('lâchée, le bout libre suit la corde que la main ravale, jusque dans la main', () => {
+    const c = new RopeChain();
+    c.reset(0, 0, 100, -50);
+    const len0 = Math.hypot(100, 50);
+    for (let k = 1; k <= 6; k++) c.step(1 / 60, 0, 0, 0, 0, false, len0 * (1 - k / 6), G);
+    for (let i = 0; i < c.n; i++) expect(Math.hypot(c.x[i], c.y[i])).toBeLessThan(0.5);
+  });
+
+  it('en pause, elle est figée', () => {
+    const c = new RopeChain();
+    c.reset(0, 0, 100, 0);
+    settle(c, 0.3, 0, 0, 100, 0, true, 140);
+    const x = Array.from(c.x);
+    const y = Array.from(c.y);
+    c.step(0, 0, 0, 100, 0, true, 140, G);
+    expect(Array.from(c.x)).toEqual(x);
+    expect(Array.from(c.y)).toEqual(y);
+  });
+
+  it('le mou vient de la sim : une main plus près de l\'ancre n\'en invente pas', () => {
+    const state = createInitialState(1, 1);
+    const pl = state.players[0];
+    pl.x = 400;
+    pl.y = 600;
+    const hk = pl.hooks[0];
+    hk.state = HOOK_ATTACHED;
+    hk.x = 400;
+    hk.y = 300;
+    hk.target = -1;
+    hk.length = 300;
+    const poses = [{ x: 400, y: 600 }, { x: 0, y: 0 }];
+    const bank = new RopeBank();
+    // Le centre du perso est à (200, 300) px d'art ; sa main 10 px plus haut, vers l'ancre.
+    const ctx = { hand: (): readonly [number, number] => [200, 290], gravity: G };
+    for (let k = 0; k < 30; k++) bank.update(1 / 60, state, poses, 2, () => undefined, ctx);
+    const r = bank.fx[0][0];
+    expect(r.phase).toBe('hold');
+    expect(r.chain.taut).toBe(true);
+    // 60 px de mou dans la sim : la corde pend sous la main.
+    hk.length = 360;
+    for (let k = 0; k < 60; k++) bank.update(1 / 60, state, poses, 2, () => undefined, ctx);
+    expect(r.chain.taut).toBe(false);
+    expect(lowest(r.chain)).toBeGreaterThan(295);
+  });
+
+  it('au pixel près : un trait d\'un seul tenant, sans coin en L, de la main au grappin', () => {
+    const cases: [number, number, number][] = [
+      [100, 0, 150],
+      [60, -80, 140],
+      [-90, 30, 160],
+      [70, 50, 95],
+    ];
+    const out: number[] = [];
+    for (const [bx, by, len] of cases) {
+      const c = new RopeChain();
+      c.reset(0, 0, bx, by);
+      settle(c, 1, 0, 0, bx, by, true, len);
+      for (const taut of [false, true]) {
+        if (taut) settle(c, 0.2, 0, 0, bx, by, true, Math.hypot(bx, by));
+        expect(c.taut).toBe(taut);
+        ropePixels(c, out);
+        const n = out.length / 2;
+        expect([out[0], out[1]]).toEqual([0, 0]);
+        expect([out[2 * n - 2], out[2 * n - 1]]).toEqual([bx, by]);
+        for (let k = 1; k < n; k++) {
+          const dx = Math.abs(out[2 * k] - out[2 * k - 2]);
+          const dy = Math.abs(out[2 * k + 1] - out[2 * k - 1]);
+          expect(Math.max(dx, dy)).toBe(1);
+        }
+        for (let k = 1; k + 1 < n; k++) {
+          const [px, py, x, y, nx, ny] = out.slice(2 * k - 2, 2 * k + 4);
+          const corner = (px === x || py === y) && (nx === x || ny === y) && px !== nx && py !== ny;
+          expect(corner).toBe(false);
+        }
+      }
+    }
+  });
+});
+
+describe('l\'ashigaru', () => {
+  it('la planche de sprites est complète : masque blanc, aucune teinte réservée', () => {
+    const sheet = buildEnemySheet();
+    expect(sheet.count).toBe(16 * 5 * 2 + 2 * 5 * 2);
+    const colors = new Set<number>();
+    for (const c of sheet.atlas.d) if (c) colors.add(c & 0xffffff);
+    expect(colors.has(ENEMY_PAL.m & 0xffffff)).toBe(true);
+    expect([...colors].filter((c) => RESERVED.has(c))).toEqual([]);
+    // Les frames de marche diffèrent (les jambes bougent).
+    expect(sheet.frame(true, 0, 0, false)).not.toBe(sheet.frame(true, Math.PI, 0, false));
+  });
+});
+

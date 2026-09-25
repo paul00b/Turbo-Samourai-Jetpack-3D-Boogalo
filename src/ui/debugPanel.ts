@@ -11,14 +11,32 @@ import {
 } from '../sim';
 import type { Game } from '../app/game';
 import { exportConfig, parseConfig, type ParamsStore } from '../io/paramsStore';
-import type { SettingsStore } from '../io/settings';
+import { RENDER_MODES, THEME_CHOICES, type RenderMode, type SettingsStore, type ThemeChoice } from '../io/settings';
+import { getTheme } from '../render/art/themes';
+import type { Renderer } from '../render/renderer';
 import { clear, h } from './dom';
 
 export interface DebugDeps {
   game: Game;
   settings: SettingsStore;
   params: ParamsStore;
+  /** Pour afficher le thème réellement dessiné et le coût du rendu pixel. */
+  renderer?: Renderer;
 }
+
+const RENDER_MODE_TEXT: Record<RenderMode, string> = {
+  art: 'Jeu : pixel art, toutes couches',
+  values: 'Valeurs : 6 niveaux de gris',
+  play: 'Couche de jeu : décor coupé',
+  greybox: 'Grey-box : rendu du proto',
+};
+
+const THEME_TEXT: Record<ThemeChoice, string> = {
+  auto: 'Auto : le thème de la carte',
+  port: "Port d'Umibozu",
+  forge: 'Forteresse de braise',
+  bamboo: 'Bambouseraie maudite',
+};
 
 const GROUP_ORDER: ParamGroup[] = ['Mouvement', 'Grappin', 'Jetpack', 'Mort', 'Ennemis', 'Solveur'];
 
@@ -34,6 +52,11 @@ export class DebugPanel {
   private importArea!: HTMLTextAreaElement;
   private readonly countButtons = new Map<number, HTMLButtonElement>();
   private camSelect: HTMLSelectElement | null = null;
+  private renderSelect: HTMLSelectElement | null = null;
+  private themeSelect: HTMLSelectElement | null = null;
+  private readonly renderInfo = h('div', { class: 'debug-info' });
+  private readonly swatches = h('div', { class: 'swatch-row' });
+  private shownSwatches = '';
 
   constructor(
     private readonly panel: HTMLElement,
@@ -47,13 +70,40 @@ export class DebugPanel {
     deps.settings.subscribe((s) => {
       for (const [n, b] of this.countButtons) b.classList.toggle('selected', s.playerCount === n);
       if (this.camSelect && this.camSelect.value !== s.cameraMode) this.camSelect.value = s.cameraMode;
+      if (this.renderSelect && this.renderSelect.value !== s.render.mode) this.renderSelect.value = s.render.mode;
+      if (this.themeSelect && this.themeSelect.value !== s.render.theme) this.themeSelect.value = s.render.theme;
     });
+  }
+
+  /** Direction artistique : mode de rendu (dont Valeurs et Couche de jeu des planches), thème. */
+  private buildRender(p: HTMLElement): void {
+    const s = this.deps.settings.get();
+    p.append(h('h3', { text: 'Rendu (direction artistique)' }));
+    const mode = h('select', { class: 'debug-select' }) as HTMLSelectElement;
+    for (const m of RENDER_MODES) mode.append(h('option', { value: m, text: RENDER_MODE_TEXT[m] }));
+    mode.value = s.render.mode;
+    mode.addEventListener('change', () => this.deps.settings.update((st) => (st.render.mode = mode.value as RenderMode)));
+    this.renderSelect = mode;
+    const theme = h('select', { class: 'debug-select' }) as HTMLSelectElement;
+    for (const t of THEME_CHOICES) theme.append(h('option', { value: t, text: THEME_TEXT[t] }));
+    theme.value = s.render.theme;
+    theme.addEventListener('change', () => this.deps.settings.update((st) => (st.render.theme = theme.value as ThemeChoice)));
+    this.themeSelect = theme;
+    p.append(
+      h('div', { class: 'debug-row' }, h('label', { text: 'Mode (F8)' }), mode),
+      h('div', { class: 'debug-row', style: 'margin-top:6px' }, h('label', { text: 'Thème' }), theme),
+      this.checkbox('Pixels entiers (zoom solo/split calé)', s.render.pixelSnap, (v) => this.deps.settings.update((st) => (st.render.pixelSnap = v))),
+      h('p', { class: 'side-note', text: 'Valeurs : le perso doit rester la forme la plus nette. Couche de jeu : ce qui reste est tout ce qui compte pour jouer.' }),
+      this.swatches,
+      this.renderInfo,
+    );
   }
 
   private build(): void {
     const p = this.panel;
     clear(p);
     const s = this.deps.settings.get();
+    this.buildRender(p);
 
     // ---- Seed
     this.seedInput = h('input', { type: 'number', value: s.seed, min: 0, step: 1, class: 'debug-num wide' }) as HTMLInputElement;
@@ -313,6 +363,18 @@ export class DebugPanel {
     this.lastInfo = nowMs;
     const g = this.deps.game;
     this.info.textContent = `tick ${g.state.tick} · hash ${g.stateHashHex()} · ${g.loop.tps} ticks/s · ${g.loop.fps} fps · historique ${g.history.oldestTick}→${g.history.newestTick}`;
+    const r = this.deps.renderer;
+    if (r) {
+      const painter = getTheme(r.themeId).painter;
+      this.renderInfo.textContent = `thème affiché : ${painter.name} · préparation ${r.prepMs.toFixed(1)} ms · rendu GPU ${r.renderMs.toFixed(1)} ms · cuisson du niveau ${r.artWorld.bakeMs.toFixed(0)} ms`;
+      if (this.shownSwatches !== painter.id) {
+        this.shownSwatches = painter.id;
+        clear(this.swatches);
+        for (const [name, hex] of painter.swatches) {
+          this.swatches.append(h('span', { title: `${name} ${hex}` }, h('i', { style: `background:${hex}` }), `${name}`));
+        }
+      }
+    }
     const net = g.net;
     if (!net) {
       this.netInfo.textContent = '';

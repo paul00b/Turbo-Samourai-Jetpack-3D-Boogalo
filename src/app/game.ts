@@ -289,7 +289,7 @@ export class Game {
     this.events.length = 0;
     step(this.state, inputs, this.events);
     // Ces événements sont ceux d'un tick simulé pour la première fois : on les consomme.
-    this.deps.sfx.handleEvents(this.events);
+    this.deps.sfx.handleEvents(this.events, this.state);
     this.fx.handleEvents(this.events);
     for (let i = 0; i < this.events.length; i++) {
       const e = this.events[i];
@@ -335,7 +335,7 @@ export class Game {
     const dt = this.loop.dtReal;
     this.fx.update(dt);
     const s = this.deps.settings.get();
-    this.deps.renderer.render(this.prev, this.state, this.loop.alpha, dt, s.cameraMode, s.camera, s.debug, this.trails, this.fx);
+    this.deps.renderer.render(this.prev, this.state, this.loop.alpha, dt, s.cameraMode, s.camera, s.debug, this.trails, this.fx, s.render);
     this.deps.sfx.update(this.state, dt);
   }
 
