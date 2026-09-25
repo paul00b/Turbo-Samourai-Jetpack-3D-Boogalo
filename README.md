@@ -37,7 +37,8 @@ src/app      Orchestration : Game (le seul endroit où les couches se touchent) 
   juste sous la vitesse max de 2600 px/s : seuls les impacts presque à fond tuent.
   En dessous, on rebondit. Les pics tuent quelle que soit la vitesse, d'où leur cantonnement à la cave.
 - **Grappin** : par défaut on reste accroché tant que le bouton est maintenu, la corde se rétracte
-  automatiquement pendant ce maintien, et relâcher lâche (`holdToAttach`). La touche reel dédiée reste
+  automatiquement pendant ce maintien, et relâcher lâche (`holdToAttach`). La rétraction s'arrête à
+  120 px de l'ancre (`minRopeLength`, ~4 tuiles) : on reste suspendu sous elle, sans s'y coller. La touche reel dédiée reste
   utilisable mais n'ajoute rien dans ce mode. Suspendu, gauche/droite pompe le balancier (`swingForce`). Le toggle `holdToAttach` à 0 rend le comportement de la spec d'origine
   (maintien = reel, relâcher garde la corde, second appui = lâcher) pour comparer.
 - **Inputs** (`src/sim/input.ts`) : `{ buttons: u16 bitfield, aim: u16 }`. L'angle de visée est quantifié sur
@@ -68,7 +69,7 @@ src/app      Orchestration : Game (le seul endroit où les couches se touchent) 
 5. Aucune valeur ne dépend du deltaTime réel : le loop ne fait qu'appeler `step` N fois.
 
 Vérification cross-navigateur : bouton **Auto-test 1000 ticks** du panneau de debug. Il rejoue un
-scénario scripté et affiche un hash. Le hash de référence est `b18deb64` (test `empreinte de référence`,
+scénario scripté et affiche un hash. Le hash de référence est `60453604` (test `empreinte de référence`,
 identique sous Node/V8 et dans Chromium). Lance-le dans Firefox et Safari : il doit être identique. Si tu
 modifies la physique, mets à jour `GOLDEN_HASH` dans `test/determinism.test.ts` dans le même commit.
 
@@ -193,7 +194,7 @@ Sliders + champ numérique pour : gravité, vitesse de marche, vitesse du projec
 vitesse de reel, raideur de corde, amortissement du pendule, force du jetpack, chauffe, refroidissement,
 friction de l'air, vitesse max, seuil de mort au mur, seuil de kill d'ennemi, masse, sous-itérations de
 contrainte, sous-pas d'intégration, et quelques extras (pompage du balancier, conservation du moment angulaire au reel,
-longueur mini de corde, friction au sol, PV, fenêtres du cut manuel, respawn ennemi).
+longueur mini de corde (120 px), friction au sol, PV, fenêtres du cut manuel, respawn ennemi).
 
 Toggles : ennemis, ennemis létaux, cut auto/manuel, maintien = accroché, 1/2 joueurs, mode caméra, hitboxes, vecteurs, trail.
 
@@ -285,8 +286,13 @@ rejoué à la place du vrai une minute plus tard.
 
 Tout est synthétisé dans `src/io/audio/sfx.ts` (oscillateurs, bruit blanc généré en code, filtres,
 enveloppes). One-shots : tir, accroche, échec, détache, surchauffe, impact mortel, kill d'ennemi, dégâts,
-respawn, atterrissage, menu. Boucles : reel (pitch lié à la vitesse de rétraction réelle du tick) et jetpack
-(volume et filtre liés à la poussée et à la chauffe). L'AudioContext est débloqué au premier clic ou à la
+respawn, atterrissage, menu. Le « clac » d'accroche (et le bruit sourd d'un raté) est retardé du temps
+de vol du grappin à l'écran (35 à 140 ms selon la distance) pour tomber avec l'image. Boucles : reel et
+jetpack (volume et filtre liés à la poussée et à la chauffe). Le reel est une corde qui s'enroule : un
+frottement de bruit filtré (rien sous 500 Hz, aucun oscillateur tonal) battu par un cliquet doux de
+bobine. Son volume, sa brillance et la cadence du cliquet suivent la vitesse de rétraction réelle du
+tick : discret, et muet dès que la corde est rentrée à fond ou bloquée (l'ancien ronflement de corde
+rentrée a disparu). L'AudioContext est débloqué au premier clic ou à la
 première touche.
 
 ## Tests
@@ -322,7 +328,9 @@ première touche.
   - aucune teinte des joueurs n'apparaît dans le décor, et le décor arrière reste sombre ;
   - les accessoires restent dans la carte.
 
-  S'y ajoutent le pantin (pieds posés, teintes réservées, deux cordes, écharpe stable à pleine vitesse)
+  S'y ajoutent le pantin (pieds posés, teintes réservées, deux cordes, écharpe stable à pleine vitesse),
+  l'animation des cordes (vol à la vitesse des planches, étincelles à l'arrivée, retour d'un raté, corde
+  lâchée qui rentre, recalage sur la sim après une mort ou un rollback, « clac » calé sur le vol dessiné)
   et la planche de l'ashigaru.
 - `test/math.test.ts`, `test/no-forbidden-math.test.ts`.
 
@@ -372,6 +380,15 @@ jambes, genoux, clignements, liseré dans la lumière du niveau, double contour 
 déterminisme n'est pas touché. Le perso fait près de deux tuiles de haut pour une hitbox de 0,7 tuile
 (rayon 11 px) : la hitbox couvre son bassin et ses jambes. Les planches suggéraient d'essayer un rayon de
 14 px ; c'est un réglage de gameplay (`playerRadius`, panneau DEBUG), il n'est pas changé ici.
+
+**Les cordes** (`ropeFx.ts`, dessinées au pixel près par `ArtView`) : l'animation de `design/planches`.
+Le grappin vole de la main jusqu'à l'ancre à 1700 px d'art/s, pointe blanche et pixel de traîne, et
+fait des étincelles en arrivant. Accrochée, la corde est en chanvre, prend la teinte du joueur tant
+qu'elle raccourcit vraiment (rentrée à 120 px, elle redevient chanvre), se détend en courbe quand elle
+est molle, et sa pointe clignote sur l'ancre. Deux gestes absents des planches : un raté file jusqu'au
+point touché, fait un éclat terne et revient ; une corde lâchée rentre dans la main. La sim accroche dès
+le tick du tir : l'envol (35 à 140 ms) est purement visuel, et l'état de la sim fait foi (mort,
+respawn ou rollback : aucune corde fantôme).
 
 **Teintes réservées** : cyan #4fd1ff pour le J1 (comme dans le proto), rose #ff6ec7 pour le J2. L'orange du
 proto se noyait dans la forteresse et dans toutes les lanternes. Aucun décor ne les emploie : c'est testé.

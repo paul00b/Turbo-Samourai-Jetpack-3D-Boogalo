@@ -160,11 +160,17 @@ export class HeroPuppet {
     return this.oy0 - OY;
   }
 
-  /** Main qui tient le grappin h, en px d'art monde (départ de la corde). */
+  /**
+   * Main qui tient le grappin h, en px d'art monde (départ de la corde). Un grappin déjà libre dans
+   * la sim (corde qui rentre, raté qui revient) rejoint la main restée libre.
+   */
   handFor(h: number): P2 {
     const J = this.J;
     if (!J) return [this.cx, this.cy];
-    const p = h === this.back ? J.handB : J.hand;
+    let p: P2;
+    if (h === this.front) p = J.hand;
+    else if (h === this.back) p = J.handB;
+    else p = this.front >= 0 ? J.handB : J.hand;
     return [this.ox0 - OX + p[0], this.oy0 - OY + p[1]];
   }
 

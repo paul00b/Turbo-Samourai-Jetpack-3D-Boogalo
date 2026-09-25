@@ -11,6 +11,7 @@ import { buildEnemySheet, ENEMY_FH, ENEMY_FW } from './enemySheet';
 import { HeroPuppet, HOOK_VIEW_ATTACHED, HOOK_VIEW_FLYING, HOOK_VIEW_IDLE, makeHeroInput } from './hero';
 import { analyzeLevel, ART_SCALE, type LevelShape } from './levelShape';
 import { DULL, ENEMY_BITS, SMOKE, SPARK } from './palette';
+import { RopeBank } from './ropeFx';
 import { chunkTextures, destroyChunks, refreshTexture, subTexture, textureFromBuf, type Chunk } from './textures';
 import type { ThemeModule } from './themes/runtime';
 import type { PropInstance } from './themes/types';
@@ -45,6 +46,8 @@ export class ArtWorld {
   readonly heroTex: Texture[];
   private readonly heroInputs = [makeHeroInput(), makeHeroInput()];
   readonly parts = new Particles();
+  /** Animation des cordes (envol, tenue, raté, retour), partagée par les vues. */
+  readonly ropes = new RopeBank();
   readonly enemyFrames: Texture[] = [];
   readonly enemySheet = buildEnemySheet();
   private propTex = new Map<string, PropTextures>();
@@ -115,6 +118,7 @@ export class ArtWorld {
       this.haloColor = halo;
     }
     this.parts.clear();
+    this.ropes.clear();
     this.version++;
     this.bakeMs = performance.now() - t0;
   }
@@ -138,13 +142,10 @@ export class ArtWorld {
       const x = e.x / ART_SCALE;
       const y = e.y / ART_SCALE;
       const hero = this.heroes[e.player]?.pal;
+      // Cordes : l'envol, le raté et le retour sont animés ; les étincelles partent à l'arrivée.
+      const puppet = this.heroes[e.player];
+      if (puppet) this.ropes.handleEvent(e, puppet.cx, puppet.cy, ART_SCALE);
       switch (e.type) {
-        case 'hookHit':
-          P.burst(x, y, 9, 140, SPARK, 0.35, 300);
-          break;
-        case 'hookMiss':
-          P.burst(x, y, 5, 60, DULL, 0.25, 200);
-          break;
         case 'death':
           if (hero) P.burst(x, y, 22, 170, [hero.scarfHi, hero.scarf, hero.scarfDk], 0.6, 120, 2);
           P.burst(x, y, 8, 110, WHITE, 0.3, 0);
@@ -239,6 +240,10 @@ export class ArtWorld {
       hero.draw(theme.rim, this.gameTime);
       refreshTexture(this.heroTex[i]);
     }
+    this.ropes.update(dt, state, poses, ART_SCALE, (x, y, miss) => {
+      if (miss) this.parts.burst(x, y, 5, 60, DULL, 0.25, 200);
+      else this.parts.burst(x, y, 9, 140, SPARK, 0.35, 300);
+    });
     this.updateParticles(level, dt);
   }
 

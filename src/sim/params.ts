@@ -54,7 +54,7 @@ export const DEFAULT_PARAMS: Readonly<SimParams> = Object.freeze({
   ropeStiffness: 1,
   ropeDamping: 0.04,
   reelAngularBoost: 0.35,
-  minRopeLength: 28,
+  minRopeLength: 120,
   jetForce: 3100,
   heatRate: 1.85,
   coolRate: 0.55,
@@ -117,7 +117,7 @@ export const PARAM_META: readonly ParamMeta[] = [
   { key: 'ropeStiffness', label: 'Raideur de la corde', min: 0.05, max: 1, step: 0.01, group: 'Grappin', hint: '1 = rigide. Fraction de correction par itération.' },
   { key: 'ropeDamping', label: 'Amortissement pendule', min: 0, max: 3, step: 0.01, group: 'Grappin', unit: '/s' },
   { key: 'reelAngularBoost', label: 'Conservation moment angulaire', min: 0, max: 1, step: 0.01, group: 'Grappin', hint: '0 = vitesse tangentielle conservée (PBD brut), 1 = physique réelle (v_t ∝ 1/r).' },
-  { key: 'minRopeLength', label: 'Longueur min de corde', min: 8, max: 200, step: 1, group: 'Grappin', unit: 'px' },
+  { key: 'minRopeLength', label: 'Longueur min de corde', min: 8, max: 200, step: 1, group: 'Grappin', unit: 'px', hint: "120 = ~4 tuiles : la rétraction s'arrête à cette distance de l'ancre, on reste suspendu sous elle." },
 
   { key: 'jetForce', label: 'Force du jetpack', min: 0, max: 10000, step: 50, group: 'Jetpack', unit: 'N (px/s² à masse 1)' },
   { key: 'heatRate', label: 'Vitesse de chauffe', min: 0, max: 3, step: 0.01, group: 'Jetpack', unit: '/s' },

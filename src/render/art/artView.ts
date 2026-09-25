@@ -13,7 +13,7 @@ import { HOOK_ATTACHED, HOOK_FLYING, type GameState } from '../../sim';
 import type { Viewport } from '../camera';
 import type { PlayerPose } from '../interpolate';
 import type { TrailBuffer } from '../trail';
-import { Particles, toHex } from '../pixel/engine';
+import { C, Particles, toHex, type Color } from '../pixel/engine';
 import type { ArtWorld } from './artWorld';
 import { ENEMY_FOOT_X, ENEMY_FOOT_Y } from './enemySheet';
 import { ART_SCALE } from './levelShape';
@@ -22,6 +22,8 @@ import { PixelQuad } from './pixelQuad';
 import type { Chunk } from './textures';
 import type { ThemeModule, ThemeRuntime } from './themes/runtime';
 import type { ThemeFrame } from './themes/types';
+import { along, MISS_BACK } from './ropeFx';
+import { PixelBatch } from './themes/pixiKit';
 
 export type ArtMode = 'art' | 'values' | 'play';
 
@@ -31,8 +33,9 @@ export interface ArtViewOptions {
   time: number;
 }
 
-const HEMP = 0xd9cfb4;
-const METAL = 0x9aa3b2;
+const HEMP: Color = C('#d9cfb4');
+const METAL: Color = C('#9aa3b2');
+const WHITE: Color = C('#ffffff');
 const MAX_RT = 4096;
 
 function roundUp(v: number, step: number): number {
@@ -56,7 +59,7 @@ export class ArtView {
   private readonly trail = new Graphics();
   private readonly enemies = new Container();
   private readonly halos = new Container();
-  private readonly ropes = new Graphics();
+  private readonly ropeBatch = new PixelBatch();
   private readonly heroes = new Container();
   private readonly particles = new Graphics();
   private readonly frontChunks = new Container();
@@ -87,7 +90,7 @@ export class ArtView {
     this.quad = new PixelQuad(this.rt);
     this.display.addChild(this.quad.mesh);
     this.worldBack.addChild(this.backChunks, this.propsBack, this.tileChunks);
-    this.worldFront.addChild(this.hazardChunks, this.trail, this.enemies, this.halos, this.ropes, this.heroes, this.particles, this.frontChunks, this.propsFront, this.overlay);
+    this.worldFront.addChild(this.hazardChunks, this.trail, this.enemies, this.halos, this.ropeBatch.g, this.heroes, this.particles, this.frontChunks, this.propsFront, this.overlay);
   }
 
   private ensureRuntime(theme: ThemeModule): void {
@@ -366,56 +369,97 @@ export class ArtView {
     }
   }
 
+  /**
+   * Cordes des planches (hero.js), en pixels exacts (Bresenham, comme `buf.line`) : envol du grappin
+   * pointe blanche et pixel de traîne, corde en chanvre qui passe à la teinte du joueur pendant
+   * qu'elle se rétracte vraiment, courbe quand elle est molle, croix de métal à l'ancre.
+   */
   private drawRopes(world: ArtWorld, state: GameState, poses: readonly PlayerPose[]): void {
-    const g = this.ropes;
-    g.clear();
+    const b = this.ropeBatch;
+    b.clear();
     const blink = Math.sin(world.gameTime * 6) > 0.5;
+    const minLen = state.params.minRopeLength;
     for (let i = 0; i < state.playerCount; i++) {
       const pl = state.players[i];
       const hero = world.heroes[i];
       for (let h = 0; h < 2; h++) {
         const hk = pl.hooks[h];
-        if (hk.state !== HOOK_FLYING && hk.state !== HOOK_ATTACHED) continue;
+        const r = world.ropes.fx[i][h];
         const [hx, hy] = hero.handFor(h);
-        let ax: number;
-        let ay: number;
-        if (hk.state === HOOK_FLYING) {
-          ax = poses[i].hookX[h] / ART_SCALE;
-          ay = poses[i].hookY[h] / ART_SCALE;
-        } else if (hk.target >= 0) {
-          ax = poses[hk.target].x / ART_SCALE;
-          ay = poses[hk.target].y / ART_SCALE;
-        } else {
-          ax = hk.x / ART_SCALE;
-          ay = hk.y / ART_SCALE;
-        }
-        const reeling = hk.state === HOOK_ATTACHED && hk.reeling === 1;
-        const color = reeling ? PLAYER_HEX[i] : HEMP;
-        const x0 = Math.round(hx) + 0.5;
-        const y0 = Math.round(hy) + 0.5;
-        const x1 = Math.round(ax) + 0.5;
-        const y1 = Math.round(ay) + 0.5;
-        let slack = 0;
-        if (hk.state === HOOK_ATTACHED) {
-          const anchorX = hk.target >= 0 ? poses[hk.target].x : hk.x;
-          const anchorY = hk.target >= 0 ? poses[hk.target].y : hk.y;
-          slack = Math.max(0, hk.length - Math.hypot(poses[i].x - anchorX, poses[i].y - anchorY)) / ART_SCALE;
-        }
-        g.moveTo(x0, y0);
-        if (slack > 1.5) {
-          for (let k = 1; k <= 16; k++) {
-            const u = k / 16;
-            g.lineTo(Math.round(x0 + (x1 - x0) * u) + 0, Math.round(y0 + (y1 - y0) * u + slack * 0.6 * 4 * u * (1 - u)) + 0.5);
+        switch (r.phase) {
+          case 'throw': {
+            const [x, y] = along(hx, hy, r.tx, r.ty, r.t / r.dur);
+            this.ropeLine(hx, hy, x, y, 0, HEMP);
+            this.hookHead(x, y, true, hx, hy, true);
+            break;
           }
-        } else g.lineTo(x1, y1);
-        g.stroke({ width: 1, color, alpha: 1, cap: 'square' });
-        // Tête du grappin : croix de métal, point blanc qui clignote (fixe en vol).
-        const px = Math.round(ax);
-        const py = Math.round(ay);
-        g.rect(px - 1, py, 1, 1).rect(px + 1, py, 1, 1).rect(px, py - 1, 1, 1).rect(px, py + 1, 1, 1).fill(METAL);
-        if (blink || hk.state === HOOK_FLYING) g.rect(px, py, 1, 1).fill(0xffffff);
+          case 'miss': {
+            const out = r.t < r.dur;
+            const [x, y] = out ? along(hx, hy, r.tx, r.ty, r.t / r.dur) : along(r.tx, r.ty, hx, hy, (r.t - r.dur) / MISS_BACK);
+            this.ropeLine(hx, hy, x, y, 0, HEMP);
+            this.hookHead(x, y, out, hx, hy, out);
+            break;
+          }
+          case 'retract': {
+            const [x, y] = along(r.fromX, r.fromY, hx, hy, r.t / r.dur);
+            this.ropeLine(hx, hy, x, y, 0, HEMP);
+            this.hookHead(x, y, false, hx, hy, false);
+            break;
+          }
+          case 'hold': {
+            if (hk.state !== HOOK_ATTACHED) break;
+            const anchorX = hk.target >= 0 ? poses[hk.target].x : hk.x;
+            const anchorY = hk.target >= 0 ? poses[hk.target].y : hk.y;
+            const slack = Math.max(0, hk.length - Math.hypot(poses[i].x - anchorX, poses[i].y - anchorY)) / ART_SCALE;
+            // Cyan seulement pendant que la corde raccourcit : rentrée au minimum, elle redevient chanvre.
+            const reeling = hk.reeling === 1 && hk.length > minLen + 0.5;
+            const ax = anchorX / ART_SCALE;
+            const ay = anchorY / ART_SCALE;
+            this.ropeLine(hx, hy, ax, ay, slack, reeling ? hero.pal.scarf : HEMP);
+            this.hookHead(ax, ay, blink, hx, hy, false);
+            break;
+          }
+          default:
+            if (hk.state === HOOK_FLYING) {
+              const x = poses[i].hookX[h] / ART_SCALE;
+              const y = poses[i].hookY[h] / ART_SCALE;
+              this.ropeLine(hx, hy, x, y, 0, HEMP);
+              this.hookHead(x, y, true, hx, hy, true);
+            }
+            break;
+        }
       }
     }
+    b.flush();
+  }
+
+  /** Corde tendue, ou chaînette de 16 segments quand elle a du mou (formule des planches). */
+  private ropeLine(x0: number, y0: number, x1: number, y1: number, slack: number, color: Color): void {
+    const b = this.ropeBatch;
+    if (slack > 1.5) {
+      let px = x0;
+      let py = y0;
+      for (let k = 1; k <= 16; k++) {
+        const s = k / 16;
+        const x = x0 + (x1 - x0) * s;
+        const y = y0 + (y1 - y0) * s + slack * 0.6 * 4 * s * (1 - s);
+        b.line(px, py, x, y, color);
+        px = x;
+        py = y;
+      }
+    } else b.line(x0, y0, x1, y1, color);
+  }
+
+  /** Tête du grappin : croix de métal, point blanc, pixel de traîne pendant le vol. */
+  private hookHead(x: number, y: number, white: boolean, hx: number, hy: number, trail: boolean): void {
+    const b = this.ropeBatch;
+    b.px(x - 1, y, METAL);
+    b.px(x + 1, y, METAL);
+    b.px(x, y - 1, METAL);
+    b.px(x, y + 1, METAL);
+    if (white) b.px(x, y, WHITE);
+    const d = Math.hypot(x - hx, y - hy);
+    if (trail && d > 4) b.px(x - ((x - hx) / d) * 2, y - ((y - hy) / d) * 2, METAL);
   }
 
   private drawParticles(parts: Particles, x: number, y: number, w: number, h: number): void {

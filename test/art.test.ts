@@ -15,6 +15,9 @@ import type { LevelCanvases, ThemePainter } from '../src/render/art/themes/types
 import { ENEMY_PAL, HERO_PALETTES, OUTLINE, RESERVED_COLORS } from '../src/render/art/palette';
 import { HERO_BUF, HeroPuppet, HOOK_VIEW_ATTACHED, makeHeroInput } from '../src/render/art/hero';
 import { buildEnemySheet } from '../src/render/art/enemySheet';
+import { MISS_BACK, RopeBank, THROW_SPEED, throwDuration } from '../src/render/art/ropeFx';
+import { hookFlightDelay } from '../src/io/audio/sfx';
+import { createInitialState, HOOK_ATTACHED, type SimEvent } from '../src/sim';
 
 const RESERVED = new Set<number>(RESERVED_COLORS.map((c) => c & 0xffffff));
 
@@ -374,6 +377,91 @@ describe('le samouraï', () => {
       expect(Number.isFinite(p[0]) && Number.isFinite(p[1])).toBe(true);
       expect(Math.hypot(p[0] - 200, p[1] - 200)).toBeLessThan(20);
     }
+  });
+});
+
+describe('les cordes (animation des planches)', () => {
+  const setup = (): { bank: RopeBank; state: ReturnType<typeof createInitialState>; poses: { x: number; y: number }[]; lands: [number, number, boolean][] } => {
+    const state = createInitialState(1, 1);
+    state.players[0].x = 400;
+    state.players[0].y = 600;
+    return { bank: new RopeBank(), state, poses: [{ x: 400, y: 600 }, { x: 0, y: 0 }], lands: [] };
+  };
+  const hit = (x: number, y: number): SimEvent => ({ type: 'hookHit', tick: 1, player: 0, x, y, hook: 1, value: 0 });
+
+  it('le grappin vole jusqu\'à l\'ancre, étincelle à l\'arrivée, puis la corde est tenue', () => {
+    const { bank, state, poses, lands } = setup();
+    const hk = state.players[0].hooks[1];
+    hk.state = HOOK_ATTACHED;
+    hk.x = 400;
+    hk.y = 300;
+    bank.handleEvent(hit(400, 300), 200, 300, 2);
+    const r = bank.fx[0][1];
+    expect(r.phase).toBe('throw');
+    // 150 px d'art à 1700 px/s : un peu moins d'un dixième de seconde.
+    expect(r.dur).toBeCloseTo(150 / THROW_SPEED, 5);
+    const onLand = (x: number, y: number, miss: boolean): void => void lands.push([x, y, miss]);
+    bank.update(r.dur / 2, state, poses, 2, onLand);
+    expect(r.phase).toBe('throw');
+    expect(lands).toHaveLength(0);
+    bank.update(r.dur, state, poses, 2, onLand);
+    expect(r.phase).toBe('hold');
+    expect(lands).toEqual([[200, 150, false]]);
+    bank.update(1, state, poses, 2, onLand);
+    expect(lands).toHaveLength(1);
+  });
+
+  it('en pause rien n\'avance ; lâchée, la corde rentre dans la main puis disparaît', () => {
+    const { bank, state, poses } = setup();
+    const hk = state.players[0].hooks[1];
+    hk.state = HOOK_ATTACHED;
+    hk.x = 400;
+    hk.y = 300;
+    bank.handleEvent(hit(400, 300), 200, 300, 2);
+    bank.update(0, state, poses, 2, () => undefined);
+    expect(bank.fx[0][1].t).toBe(0);
+    bank.update(1, state, poses, 2, () => undefined);
+    hk.state = 0;
+    bank.handleEvent({ type: 'hookDetach', tick: 2, player: 0, x: 400, y: 600, hook: 1 }, 200, 300, 2);
+    expect(bank.fx[0][1].phase).toBe('retract');
+    expect(bank.fx[0][1].fromY).toBe(150);
+    bank.update(0.2, state, poses, 2, () => undefined);
+    expect(bank.fx[0][1].phase).toBe('none');
+  });
+
+  it('un raté file jusqu\'au point touché, fait un éclat terne, puis revient', () => {
+    const { bank, state, poses, lands } = setup();
+    bank.handleEvent({ type: 'hookMiss', tick: 1, player: 0, x: 600, y: 300, hook: 0 }, 200, 300, 2);
+    const r = bank.fx[0][0];
+    expect(r.phase).toBe('miss');
+    const onLand = (x: number, y: number, miss: boolean): void => void lands.push([x, y, miss]);
+    bank.update(r.dur + 0.001, state, poses, 2, onLand);
+    expect(lands).toEqual([[300, 150, true]]);
+    expect(r.phase).toBe('miss');
+    bank.update(MISS_BACK, state, poses, 2, onLand);
+    expect(r.phase).toBe('none');
+  });
+
+  it('mort ou rollback : aucune corde fantôme, et l\'état de la sim fait foi', () => {
+    const { bank, state, poses } = setup();
+    const hk = state.players[0].hooks[0];
+    hk.state = HOOK_ATTACHED;
+    hk.x = 500;
+    hk.y = 400;
+    // Accroché sans événement (rollback) : tenue directe, sans envol.
+    bank.update(1 / 60, state, poses, 2, () => undefined);
+    expect(bank.fx[0][0].phase).toBe('hold');
+    // Lâché sans événement : la corde rentre.
+    hk.state = 0;
+    bank.update(1 / 60, state, poses, 2, () => undefined);
+    expect(bank.fx[0][0].phase).toBe('retract');
+    // Mort : tout s'efface, rien ne traverse la carte jusqu'au spawn.
+    bank.handleEvent({ type: 'death', tick: 3, player: 0, x: 0, y: 0 }, 0, 0, 2);
+    expect(bank.fx[0].map((r) => r.phase)).toEqual(['none', 'none']);
+  });
+
+  it('le « clac » d\'accroche attend exactement le vol dessiné', () => {
+    for (const worldDist of [0, 60, 200, 420, 900]) expect(hookFlightDelay(worldDist)).toBeCloseTo(throwDuration(worldDist / 2), 9);
   });
 });
 

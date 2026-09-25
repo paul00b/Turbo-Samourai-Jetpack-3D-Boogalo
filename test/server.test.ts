@@ -75,9 +75,12 @@ describe('relais de sessions', () => {
     send(a, { t: 'host', version: PROTOCOL_VERSION });
     const code = (await next(a) as { code: string }).code;
     const b = await connect();
+    // On écoute AVANT d'envoyer : le « peer-joined » de A peut arriver avant le « joined » de B.
+    const bJoined = next(b);
+    const aSeesJoin = next(a);
     send(b, { t: 'join', version: PROTOCOL_VERSION, code });
-    await next(b);
-    await next(a); // peer-joined
+    await bJoined;
+    await aSeesJoin; // peer-joined
     const c = await connect();
     send(c, { t: 'join', version: PROTOCOL_VERSION, code });
     expect(await next(c)).toMatchObject({ t: 'error', reason: 'session-full' });
