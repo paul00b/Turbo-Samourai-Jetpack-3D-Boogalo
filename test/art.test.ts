@@ -16,6 +16,7 @@ import { ENEMY_PAL, HERO_PALETTES, OUTLINE, RESERVED_COLORS } from '../src/rende
 import { HERO_BUF, HeroPuppet, HOOK_VIEW_ATTACHED, makeHeroInput } from '../src/render/art/hero';
 import { buildEnemySheet } from '../src/render/art/enemySheet';
 import { MISS_BACK, RopeBank, THROW_SPEED, throwDuration } from '../src/render/art/ropeFx';
+import { RopeChain, ropePixels, type RopeGround } from '../src/render/art/ropeChain';
 import { hookFlightDelay } from '../src/io/audio/sfx';
 import { createInitialState, HOOK_ATTACHED, type SimEvent } from '../src/sim';
 
@@ -462,6 +463,160 @@ describe('les cordes (animation des planches)', () => {
 
   it('le « clac » d\'accroche attend exactement le vol dessiné', () => {
     for (const worldDist of [0, 60, 200, 420, 900]) expect(hookFlightDelay(worldDist)).toBeCloseTo(throwDuration(worldDist / 2), 9);
+  });
+});
+
+describe('la corde physique (rendu seulement)', () => {
+  const G = 900;
+  const settle = (c: RopeChain, seconds: number, ax: number, ay: number, bx: number, by: number, pinned: boolean, len: number, ground?: RopeGround): void => {
+    for (let k = 0; k < Math.round(seconds * 60); k++) c.step(1 / 60, ax, ay, bx, by, pinned, len, G, ground);
+  };
+  const lengthOf = (c: RopeChain): number => {
+    let s = 0;
+    for (let i = 0; i < c.n - 1; i++) s += Math.hypot(c.x[i + 1] - c.x[i], c.y[i + 1] - c.y[i]);
+    return s;
+  };
+  const lowest = (c: RopeChain): number => Math.max(...Array.from(c.y));
+
+  it('tendue (la sim tire), elle est droite d\'un bout à l\'autre', () => {
+    const c = new RopeChain();
+    c.reset(0, 0, 100, -60);
+    settle(c, 0.5, 0, 0, 100, -60, true, Math.hypot(100, 60));
+    expect(c.taut).toBe(true);
+    for (let i = 0; i < c.n; i++) {
+      const t = i / (c.n - 1);
+      expect(c.x[i]).toBeCloseTo(100 * t, 6);
+      expect(c.y[i]).toBeCloseTo(-60 * t, 6);
+    }
+  });
+
+  it('avec du mou, elle pend en chaînette, garde sa longueur et ses deux bouts', () => {
+    const c = new RopeChain();
+    c.reset(0, 0, 100, 0);
+    settle(c, 3, 0, 0, 100, 0, true, 130);
+    expect(c.taut).toBe(false);
+    expect([c.x[0], c.y[0], c.x[c.n - 1], c.y[c.n - 1]]).toEqual([0, 0, 100, 0]);
+    // Chaînette de 130 px sur 100 px : flèche théorique de 36,8 px, point bas au milieu.
+    expect(lowest(c)).toBeGreaterThan(33);
+    expect(lowest(c)).toBeLessThan(41);
+    const mid = c.y.indexOf(lowest(c));
+    expect(Math.abs(c.x[mid] - 50)).toBeLessThan(6);
+    expect(lengthOf(c)).toBeGreaterThan(127);
+    expect(lengthOf(c)).toBeLessThan(133);
+  });
+
+  it('elle a de l\'inertie : la main qui file la fait plier, puis elle se calme', () => {
+    const c = new RopeChain();
+    // Ancre en haut, main 100 px dessous, 20 px de mou.
+    c.reset(0, 100, 0, 0);
+    settle(c, 2, 0, 100, 0, 0, true, 120);
+    // La main part de côté à 600 px/s : la corde traîne derrière elle.
+    let bend = 0;
+    for (let k = 1; k <= 6; k++) {
+      const hx = 10 * k;
+      c.step(1 / 60, hx, 100, 0, 0, true, 120, G);
+      // Retard sur le segment main-ancre, du côté opposé au mouvement.
+      for (let i = 1; i < c.n - 1; i++) bend = Math.max(bend, (hx * (100 - c.y[i])) / 100 - c.x[i]);
+    }
+    expect(bend).toBeGreaterThan(4);
+    // Arrêtée, elle finit au repos.
+    settle(c, 4, 60, 100, 0, 0, true, 120);
+    const before = Array.from(c.x);
+    c.step(1 / 60, 60, 100, 0, 0, true, 120, G);
+    for (let i = 0; i < c.n; i++) expect(Math.abs(c.x[i] - before[i])).toBeLessThan(0.05);
+  });
+
+  it('molle, elle se pose sur une tuile ; tendue, elle la traverse comme la corde de la sim', () => {
+    // Un sol plein à partir de y = 112 (tuiles de 16 px).
+    const ground: RopeGround = { solid: (_x, y) => y >= 112, cell: 16 };
+    const c = new RopeChain();
+    c.reset(0, 90, 80, 110);
+    settle(c, 3, 0, 90, 80, 110, true, 220, ground);
+    // Tout le mou est posé : aucun pixel de corde dans le sol.
+    for (let i = 0; i < c.n; i++) expect(Math.round(c.y[i])).toBeLessThanOrEqual(111);
+    expect(lowest(c)).toBeGreaterThan(110);
+    // Tendue à travers le sol (la corde de la sim ignore les murs) : droite quand même.
+    c.reset(0, 90, 80, 150);
+    settle(c, 0.5, 0, 90, 80, 150, true, Math.hypot(80, 60), ground);
+    for (let i = 0; i < c.n; i++) expect(c.y[i]).toBeCloseTo(90 + (60 * i) / (c.n - 1), 6);
+  });
+
+  it('lâchée, le bout libre suit la corde que la main ravale, jusque dans la main', () => {
+    const c = new RopeChain();
+    c.reset(0, 0, 100, -50);
+    const len0 = Math.hypot(100, 50);
+    for (let k = 1; k <= 6; k++) c.step(1 / 60, 0, 0, 0, 0, false, len0 * (1 - k / 6), G);
+    for (let i = 0; i < c.n; i++) expect(Math.hypot(c.x[i], c.y[i])).toBeLessThan(0.5);
+  });
+
+  it('en pause, elle est figée', () => {
+    const c = new RopeChain();
+    c.reset(0, 0, 100, 0);
+    settle(c, 0.3, 0, 0, 100, 0, true, 140);
+    const x = Array.from(c.x);
+    const y = Array.from(c.y);
+    c.step(0, 0, 0, 100, 0, true, 140, G);
+    expect(Array.from(c.x)).toEqual(x);
+    expect(Array.from(c.y)).toEqual(y);
+  });
+
+  it('le mou vient de la sim : une main plus près de l\'ancre n\'en invente pas', () => {
+    const state = createInitialState(1, 1);
+    const pl = state.players[0];
+    pl.x = 400;
+    pl.y = 600;
+    const hk = pl.hooks[0];
+    hk.state = HOOK_ATTACHED;
+    hk.x = 400;
+    hk.y = 300;
+    hk.target = -1;
+    hk.length = 300;
+    const poses = [{ x: 400, y: 600 }, { x: 0, y: 0 }];
+    const bank = new RopeBank();
+    // Le centre du perso est à (200, 300) px d'art ; sa main 10 px plus haut, vers l'ancre.
+    const ctx = { hand: (): readonly [number, number] => [200, 290], gravity: G };
+    for (let k = 0; k < 30; k++) bank.update(1 / 60, state, poses, 2, () => undefined, ctx);
+    const r = bank.fx[0][0];
+    expect(r.phase).toBe('hold');
+    expect(r.chain.taut).toBe(true);
+    // 60 px de mou dans la sim : la corde pend sous la main.
+    hk.length = 360;
+    for (let k = 0; k < 60; k++) bank.update(1 / 60, state, poses, 2, () => undefined, ctx);
+    expect(r.chain.taut).toBe(false);
+    expect(lowest(r.chain)).toBeGreaterThan(295);
+  });
+
+  it('au pixel près : un trait d\'un seul tenant, sans coin en L, de la main au grappin', () => {
+    const cases: [number, number, number][] = [
+      [100, 0, 150],
+      [60, -80, 140],
+      [-90, 30, 160],
+      [70, 50, 95],
+    ];
+    const out: number[] = [];
+    for (const [bx, by, len] of cases) {
+      const c = new RopeChain();
+      c.reset(0, 0, bx, by);
+      settle(c, 1, 0, 0, bx, by, true, len);
+      for (const taut of [false, true]) {
+        if (taut) settle(c, 0.2, 0, 0, bx, by, true, Math.hypot(bx, by));
+        expect(c.taut).toBe(taut);
+        ropePixels(c, out);
+        const n = out.length / 2;
+        expect([out[0], out[1]]).toEqual([0, 0]);
+        expect([out[2 * n - 2], out[2 * n - 1]]).toEqual([bx, by]);
+        for (let k = 1; k < n; k++) {
+          const dx = Math.abs(out[2 * k] - out[2 * k - 2]);
+          const dy = Math.abs(out[2 * k + 1] - out[2 * k - 1]);
+          expect(Math.max(dx, dy)).toBe(1);
+        }
+        for (let k = 1; k + 1 < n; k++) {
+          const [px, py, x, y, nx, ny] = out.slice(2 * k - 2, 2 * k + 4);
+          const corner = (px === x || py === y) && (nx === x || ny === y) && px !== nx && py !== ny;
+          expect(corner).toBe(false);
+        }
+      }
+    }
   });
 });
 

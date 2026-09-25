@@ -330,8 +330,9 @@ première touche.
 
   S'y ajoutent le pantin (pieds posés, teintes réservées, deux cordes, écharpe stable à pleine vitesse),
   l'animation des cordes (vol à la vitesse des planches, étincelles à l'arrivée, retour d'un raté, corde
-  lâchée qui rentre, recalage sur la sim après une mort ou un rollback, « clac » calé sur le vol dessiné)
-  et la planche de l'ashigaru.
+  lâchée qui rentre, recalage sur la sim après une mort ou un rollback, « clac » calé sur le vol dessiné),
+  la corde physique (droite tendue, chaînette avec du mou, inertie, pose sur les tuiles, retour dans la
+  main, figée en pause, mou pris dans la sim, trait pixel perfect) et la planche de l'ashigaru.
 - `test/math.test.ts`, `test/no-forbidden-math.test.ts`.
 
 ## Direction artistique (planches)
@@ -384,11 +385,27 @@ déterminisme n'est pas touché. Le perso fait près de deux tuiles de haut pour
 **Les cordes** (`ropeFx.ts`, dessinées au pixel près par `ArtView`) : l'animation de `design/planches`.
 Le grappin vole de la main jusqu'à l'ancre à 1700 px d'art/s, pointe blanche et pixel de traîne, et
 fait des étincelles en arrivant. Accrochée, la corde est en chanvre, prend la teinte du joueur tant
-qu'elle raccourcit vraiment (rentrée à 120 px, elle redevient chanvre), se détend en courbe quand elle
-est molle, et sa pointe clignote sur l'ancre. Deux gestes absents des planches : un raté file jusqu'au
-point touché, fait un éclat terne et revient ; une corde lâchée rentre dans la main. La sim accroche dès
-le tick du tir : l'envol (35 à 140 ms) est purement visuel, et l'état de la sim fait foi (mort,
-respawn ou rollback : aucune corde fantôme).
+qu'elle raccourcit vraiment (rentrée à 120 px, elle redevient chanvre), et sa pointe clignote sur
+l'ancre. Deux gestes absents des planches : un raté file jusqu'au point touché, fait un éclat terne et
+revient ; une corde lâchée rentre dans la main. La sim accroche dès le tick du tir : l'envol (35 à
+140 ms) est purement visuel, et l'état de la sim fait foi (mort, respawn ou rollback : aucune corde
+fantôme).
+
+**Une vraie corde** (`ropeChain.ts`) : à l'écran, la corde est une chaîne de 25 points simulée (PBD :
+gravité, inertie, frottement de l'air, 2 sous-pas par frame à 60 Hz), tenue à la main et au grappin. Côté
+rendu seulement : la corde de la sim reste rigide et déterministe.
+
+- Tendue (la sim tire), elle est droite, exactement comme la contrainte de la sim.
+- Avec du mou, elle pend en chaînette, traîne derrière le perso, se tord et fait des boucles quand il
+  bouge, puis se calme. Le mou vient de la sim (sa corde part du centre du perso) : la main, plus près
+  ou plus loin de l'ancre selon le bras, n'en invente pas.
+- Comme une vraie corde, elle ne résiste qu'à l'étirement : comprimée, elle plie ou s'entasse. Molle,
+  elle se pose sur les tuiles (sol, corniches) au lieu de les traverser, et traîne au sol si le perso
+  marche. Tendue, elle traverse les murs comme celle de la sim.
+- Lâchée, son bout libre suit la corde que la main ravale.
+- Tracé au pixel près : un trait d'un pixel d'un seul tenant, sans « coins en L ».
+
+Quatre cordes molles posées au sol coûtent environ 0,1 ms par frame.
 
 **Teintes réservées** : cyan #4fd1ff pour le J1 (comme dans le proto), rose #ff6ec7 pour le J2. L'orange du
 proto se noyait dans la forteresse et dans toutes les lanternes. Aucun décor ne les emploie : c'est testé.
@@ -435,7 +452,8 @@ continue de s'animer en pause.
 
 ## Limites connues de la V1
 
-- Les cordes traversent les murs (pas d'enroulement autour des coins).
+- Les cordes de la sim traversent les murs (pas d'enroulement autour des coins). À l'écran, seule une
+  corde molle se pose sur les tuiles.
 - Pas de collision joueur-joueur (seulement la corde entre eux).
 - Le feel dépend des valeurs par défaut de `DEFAULT_PARAMS` : elles sont un point de départ, pas un réglage final.
 - Le samouraï fait près de deux tuiles de haut pour une hitbox de 0,7 tuile : sa tête peut mordre un
