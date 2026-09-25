@@ -34,7 +34,8 @@ export function planks(b: Buf, x: number, y: number, w: number, h: number, P: Wo
   b.hline(x, x + w - 1, y + h - 1, P.dark);
   for (let s = x + 5; s < x + w; s += 11) {
     b.rect(s, y + 2, 1, h - 3, P.seam);
-    if (hash2(s, y, 3) > 0.6) b.px(s + 4, y + 3 + ((s * 7) % Math.max(1, h - 4)), P.knot);
+    // Le nœud reste dans la planche (celle des planches pouvait déborder de 3 px).
+    if (hash2(s, y, 3) > 0.6 && s + 4 < x + w) b.px(s + 4, y + 3 + ((s * 7) % Math.max(1, h - 4)), P.knot);
   }
 }
 

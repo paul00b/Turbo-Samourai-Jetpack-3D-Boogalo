@@ -179,6 +179,24 @@ for (const painter of PAINTER_LIST) {
           }
           expect(outside).toBe(0);
           if (shape.spikes.length > 0) expect(red, 'pointes rouges').toBeGreaterThan(shape.spikes.length * 3);
+          // Le danger ressort de son sol : dans chaque tuile de pics, un pixel plus clair que le haut
+          // du sol qui la porte (le sol sous une fosse n'a pas d'arête claire à lui, cf. plus bas).
+          const tiles = canvases.tiles;
+          let dull = 0;
+          for (const run of shape.spikes) {
+            for (let tx = run.x0; tx <= run.x1; tx++) {
+              if (shape.level.tiles[(run.y + 1) * shape.w + tx] !== T_SOLID) continue;
+              let floorTop = 0;
+              for (let x = tx * ART_TILE; x < (tx + 1) * ART_TILE; x++) floorTop += luma(tiles.d[(run.y + 1) * ART_TILE * tiles.w + x]);
+              floorTop /= ART_TILE;
+              let brightest = 0;
+              for (let y = run.y * ART_TILE; y < (run.y + 1) * ART_TILE; y++) {
+                for (let x = tx * ART_TILE; x < (tx + 1) * ART_TILE; x++) brightest = Math.max(brightest, luma(hz.d[y * hz.w + x]));
+              }
+              if (brightest <= floorTop) dull++;
+            }
+          }
+          expect(dull, 'tuiles de pics qui ne ressortent pas de leur sol').toBe(0);
         });
 
         it('arête claire : le haut d\'une tuile accrochable exposée est plus clair que son cœur', () => {
@@ -190,6 +208,8 @@ for (const painter of PAINTER_LIST) {
             for (let tx = 1; tx < shape.w - 1; tx++) {
               if (shape.level.tiles[ty * shape.w + tx] !== T_SOLID) continue;
               if ((exposedFaces(shape, tx, ty) & 1) === 0) continue;
+              // Sous un pic, personne ne se pose : pas d'arête exigée (croûte de lave, fond d'eau…).
+              if (shape.level.tiles[(ty - 1) * shape.w + tx] === T_SPIKE) continue;
               let top = 0;
               let core = 0;
               for (let x = tx * ART_TILE; x < (tx + 1) * ART_TILE; x++) {

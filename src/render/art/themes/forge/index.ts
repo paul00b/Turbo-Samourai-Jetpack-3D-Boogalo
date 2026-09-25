@@ -1,12 +1,8 @@
-/**
- * Forteresse de braise (provisoire) : tant que le thème n'est pas peint, il reprend le port.
- * À remplacer par palette.ts / paint.ts / runtime.ts sur le modèle de themes/port.
- */
+/** Forteresse de braise : un château en flammes au pied de deux volcans, gardé par un oni de basalte. */
 import type { ThemeModule } from '../runtime';
-import { portPainter } from '../port/painter';
-import { createPortRuntime } from '../port/runtime';
+import { forgePainter } from './painter';
+import { createForgeRuntime } from './runtime';
 
-export const forgeTheme: ThemeModule = {
-  painter: { ...portPainter, id: 'forge', name: 'Forteresse de braise', hud: 'FORTERESSE DE BRAISE' },
-  createRuntime: createPortRuntime,
-};
+export { forgePainter };
+
+export const forgeTheme: ThemeModule = { painter: forgePainter, createRuntime: createForgeRuntime };

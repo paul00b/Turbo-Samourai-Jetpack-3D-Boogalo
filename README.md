@@ -4,7 +4,9 @@ Jeu 2D de mouvement basé sur la physique : un personnage qui marche à peine (t
 indépendants et un jetpack orientable. La vitesse est l'outil principal et la cause de mort principale.
 
 Cette V1 sert à **valider le feel** et à **poser une architecture déterministe** compatible plus tard
-avec leaderboard, replays fantômes et netcode rollback. Pas de contenu, pas de progression, grey-box.
+avec leaderboard, replays fantômes et netcode rollback. Pas de contenu, pas de progression. Depuis la
+branche `Design-V1`, le jeu porte la direction artistique des planches (pixel art calculé en code, trois
+thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](#rendu-pixel-design-v1)).
 
 ## Lancer
 
@@ -15,7 +17,7 @@ npm test             # 35 tests : déterminisme, snapshot/rollback, physique, ga
 npm run build        # typecheck + build de prod dans dist/
 ```
 
-Stack : TypeScript, Vite 7, PixiJS 8 (WebGL forcé), Web Audio API native. Aucun asset : sons synthétisés, formes vectorielles.
+Stack : TypeScript, Vite 7, PixiJS 8 (WebGL forcé), Web Audio API native. Aucun asset : sons synthétisés, pixel art calculé en code (le moteur des planches), polices DotGothic16 et Zen Kaku Gothic New (Google Fonts, repli en police système hors ligne).
 
 ## Architecture : trois couches étanches
 
@@ -92,7 +94,7 @@ Manette : la Gamepad API ne liste une manette qu'après un premier appui, le HUD
 « appuie sur un bouton ». Les manettes non « standard » gardent le mapping par défaut en meilleur effort
 et un avertissement invite à remapper. Deadzone radiale de 0.18 avec remise à l'échelle.
 
-Raccourcis debug : **F1** panneau, **F2** mode caméra, **F3** hitboxes, **F4** vecteurs de vélocité, **F6** trail.
+Raccourcis debug : **F1** panneau, **F2** mode caméra, **F3** hitboxes, **F4** vecteurs de vélocité, **F6** trail, **F8** mode de rendu (Jeu, Valeurs, Couche de jeu, Grey-box).
 
 ## Multijoueur en ligne (sessions à code)
 
@@ -296,11 +298,68 @@ première touche.
 d'Umibozu, Forteresse de braise, Bambouseraie maudite) et un gros plan du samouraï, rendus en direct en
 640 × 360 sur canvas. Sous chaque planche, le mode **Valeurs** (niveaux de gris) et le mode **Couche de jeu**
 (décor coupé) servent à vérifier que le perso reste lisible. Ouvrir le fichier dans un navigateur suffit,
-aucun build. Tout est procédural : ça valide la direction et le mouvement, pas le rendu final.
+aucun build. Tout est procédural : ça valide la direction et le mouvement, pas le rendu final. Le jeu
+implémente désormais cette direction (section suivante) ; les planches restent la référence.
+
+## Rendu pixel (Design V1)
+
+Le jeu dessine la direction artistique des planches avec leur propre moteur, porté en TypeScript :
+`src/render/pixel/engine.ts` (framebuffer 32 bits, primitives entières, tramage Bayer, bruit, contour
+automatique) et `kit.ts` (bois, pierre, surfaces lisses, pieux, bannières, lanternes, nuages), à
+l'identique de `design/planches/engine.js` et `kit.js`. Aucun fichier image.
+
+**Chaîne de rendu** (`src/render/art/`)
+
+- Chaque vue est rendue dans une RenderTexture **à la résolution de l'art** : 1 px d'art = 2 px monde,
+  une tuile = 16 px d'art, la densité exacte des planches. La caméra est calée au pixel d'art, comme dans
+  les planches, puis `PixelQuad` agrandit l'image à l'écran en « sharp bilinear » : chaque pixel d'art
+  reste un bloc net, seuls ses bords sont lissés sur un pixel écran. Le reste sous-pixel de la caméra est
+  passé au quad : le défilement reste fluide. Le mode Valeurs est appliqué dans ce même shader.
+- Zoom solo par défaut à 1 (2 px écran par px d'art). L'option **Pixels entiers** cale les zooms fixes
+  (solo, split) sur un nombre entier de pixels écran par pixel d'art, y compris sur les écrans à 125 ou
+  150 %. Le zoom dynamique à deux joueurs reste continu, le « sharp bilinear » évite le scintillement.
+- `ArtWorld`, partagé entre les vues : cuisson de la carte par le peintre du thème en quatre calques
+  découpés en tuiles de texture de 512 px (décor arrière, tuiles de jeu, dangers, décor avant), pantins,
+  particules, planche de sprites de l'ashigaru. `ArtView`, une par viewport : couches, parallaxe,
+  accessoires animés, cordes, particules. Ordre : fond du thème, décor arrière, accessoires, tuiles,
+  brumes du thème, dangers, traînée, ennemis, halo, cordes, joueurs, particules, décor avant, premier
+  plan du thème (pluie, braises : ils s'écartent du perso).
+- Événements de la sim (accroche, échec, mort, kill, coup, atterrissage, surchauffe, fin de niveau) :
+  étincelles, éclats, coup de lame, poussière, fumée. Les débris retombent et se couchent sur les tuiles.
+
+**Le samouraï** (`hero.ts`) : le pantin des planches, redessiné pixel par pixel à chaque frame depuis son
+squelette, mais piloté par l'état de la sim (position interpolée, vitesse, deux grappins, chauffe, sol,
+visée) au lieu de son contrôleur automatique. Ajouts : une main par corde, marche en tongs, glissade au sol
+au-delà de 100 px/s, réception, points de visée dans la teinte du joueur, pieds posés (le dessin remonte en
+continu quand le sol approche). Écharpe en chaîne verlet (sous-échantillonnée à grande vitesse), retard des
+jambes, genoux, clignements, liseré dans la lumière du niveau, double contour : tout reste côté rendu, le
+déterminisme n'est pas touché. Le perso fait près de deux tuiles de haut pour une hitbox de 0,7 tuile
+(rayon 11 px) : la hitbox couvre son bassin et ses jambes. Les planches suggéraient d'essayer un rayon de
+14 px ; c'est un réglage de gameplay (`playerRadius`, panneau DEBUG), il n'est pas changé ici.
+
+**Teintes réservées** : cyan #4fd1ff pour le J1 (comme dans le proto), rose #ff6ec7 pour le J2. L'orange du
+proto se noyait dans la forteresse et dans toutes les lanternes. Aucun décor ne les emploie : c'est testé.
+
+**Grammaire commune** à tous les thèmes, habillée différemment : arête claire = accrochable (`#`), reflets
+obliques froids = lisse (`=`), pointe rouge = mortel (`^`), masque blanc = ennemi. Le décor reste dans les
+valeurs sombres ; seuls le perso, les arêtes accrochables et les dangers touchent les extrêmes. Un effet
+ne cache jamais un danger, et ce qui passe devant s'écarte du perso.
+
+**Modes de rendu** (panneau DEBUG, section Rendu, ou **F8**) : **Jeu** ; **Valeurs** (six niveaux de gris :
+le perso doit rester la forme la plus nette) ; **Couche de jeu** (décor coupé, arrivée marquée : ce qui
+reste est tout ce qui compte pour jouer) ; **Grey-box** (le rendu vectoriel du proto, pour comparer).
+
+**HUD et menus** : typographie et palette de la page des planches (DotGothic16, Zen Kaku Gothic New),
+bloc joueur à bord de sa teinte, vitesse en vert au-dessus du seuil de kill et en rouge au-dessus du seuil
+de mort, nom du niveau en or, carton-titre en début de manche. Le niveau vit derrière les menus : le décor
+continue de s'animer en pause.
 
 ## Limites connues de la V1
 
 - Les cordes traversent les murs (pas d'enroulement autour des coins).
 - Pas de collision joueur-joueur (seulement la corde entre eux).
 - Le feel dépend des valeurs par défaut de `DEFAULT_PARAMS` : elles sont un point de départ, pas un réglage final.
-- Aucun art dans le jeu : grey-box volontaire (la DA est explorée à part dans `design/planches`).
+- Le samouraï fait près de deux tuiles de haut pour une hitbox de 0,7 tuile : sa tête peut mordre un
+  plafond au contact (le dessin se décale pour l'éviter en vol libre, pas quand il est accroché).
+- L'art est procédural : il valide la direction, le mouvement et la lisibilité, pas le rendu final.
+  Pour la prod, il faudra un pixel artist, au moins pour le perso, les ennemis et les tuiles.
