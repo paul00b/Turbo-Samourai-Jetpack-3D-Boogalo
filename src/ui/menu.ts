@@ -1,6 +1,7 @@
 /**
- * Menus (DOM) : titre, choix du mode, contrôles + remapping, réglages, pause.
- * Navigables au clavier et à la manette via MenuInput + FocusNav.
+ * Menus (DOM) : menu principal (course ou arcade), choix de la carte, paramètres, contrôles +
+ * remapping, pause, fin de niveau. Navigables au clavier et à la manette via MenuInput + FocusNav.
+ * Lancer une partie : le mode, puis la carte (le dernier choix a le focus : Entrée, Entrée).
  */
 import type { Game, Phase } from '../app/game';
 import type { AudioEngine } from '../io/audio/audioEngine';
@@ -22,7 +23,13 @@ import { clear, h } from './dom';
 import { formatTime } from './hud';
 import { FocusNav, MenuInput, type MenuAction } from './focusNav';
 
-export type ScreenId = 'title' | 'mode' | 'maps' | 'net' | 'controls' | 'settings' | 'pause' | 'complete';
+export type ScreenId = 'title' | 'race' | 'kills' | 'net' | 'controls' | 'settings' | 'pause' | 'complete';
+
+/** Ce que promet chaque mode, sur sa carte du menu principal et en tête de son écran. */
+const MODE_LEAD: Record<LevelMode, string> = {
+  race: "Atteins l'arrivée le plus vite possible.",
+  kills: 'Élimine tous les ennemis de la carte.',
+};
 
 interface Capture {
   kind: 'kbm' | 'pad';
@@ -135,11 +142,9 @@ export class Menu {
       case 'title':
         el = this.buildTitle();
         break;
-      case 'mode':
-        el = this.buildMode();
-        break;
-      case 'maps':
-        el = this.buildMaps();
+      case 'race':
+      case 'kills':
+        el = this.buildMode(id);
         break;
       case 'net':
         el = this.buildNet();
@@ -173,8 +178,8 @@ export class Menu {
 
   // ------------------------------------------------------------------ écrans
 
-  private btn(label: string, onClick: () => void, extra: Record<string, string | boolean> = {}): HTMLButtonElement {
-    const b = h('button', { class: 'menu-btn', 'data-nav': true, type: 'button', tabindex: -1, ...extra }, label);
+  private btn(label: string | (Node | string | null)[], onClick: () => void, extra: Record<string, string | boolean> = {}): HTMLButtonElement {
+    const b = h('button', { class: 'menu-btn', 'data-nav': true, type: 'button', tabindex: -1, ...extra }, ...(Array.isArray(label) ? label : [label]));
     b.addEventListener('click', () => {
       b.blur();
       this.confirmSound();
@@ -187,88 +192,104 @@ export class Menu {
     return h('div', { class: 'menu-panel' }, h('h2', { class: 'menu-title', text: title }), ...children);
   }
 
+  /** Menu principal : les deux modes en grand, puis le reste. Le mode joué en dernier a le focus. */
   private buildTitle(): HTMLElement {
     const s = this.deps.settings.get();
+    const lastMode = (LEVEL_INFOS[s.levelId] ?? LEVEL_INFOS[0]).mode;
+    const card = (mode: LevelMode): HTMLButtonElement => {
+      const maps = LEVEL_INFOS.filter((l) => l.mode === mode);
+      const meta = `${maps.length} cartes · ${maps.map((m) => m.name).join(', ')}`;
+      return this.btn(
+        [h('span', { class: 'mode-name', text: LEVEL_MODE_LABEL[mode] }), h('span', { class: 'mode-lead', text: MODE_LEAD[mode] }), h('span', { class: 'mode-meta', text: meta })],
+        () => this.push(mode),
+        { class: `menu-btn mode-card mode-${mode}`, 'data-nav-row': 'modes', 'data-nav-default': mode === lastMode },
+      );
+    };
     return h(
       'div',
-      { class: 'menu-screen' },
+      { class: 'menu-screen title-screen' },
       h('p', { class: 'menu-eyebrow', text: 'PROTOTYPE · DIRECTION ARTISTIQUE V1' }),
       h('h1', { class: 'game-title' }, 'TURBO-SAMOURAÏ', h('br'), 'JETPACK 3D BOOGALOO'),
-      h('p', { class: 'menu-sub', text: 'Prototype V1 · test de feel · deux grappins, un jetpack, des tongs' }),
-      this.panel(
-        '',
-        this.btn('Jouer', () => this.push('mode')),
-        this.btn('Multijoueur en ligne', () => this.push('net')),
-        this.btn('Contrôles', () => this.push('controls')),
-        this.btn('Réglages', () => this.push('settings')),
+      h('p', { class: 'menu-sub', text: 'Deux grappins, un jetpack, des tongs' }),
+      h('div', { class: 'mode-cards' }, card('race'), card('kills')),
+      h(
+        'div',
+        { class: 'menu-row title-more' },
+        this.btn('Multijoueur en ligne', () => this.push('net'), { class: 'menu-btn secondary', 'data-nav-row': 'more' }),
+        this.btn('Paramètres', () => this.push('settings'), { class: 'menu-btn secondary', 'data-nav-row': 'more' }),
       ),
-      h('p', { class: 'menu-hint' }, `Clavier : ↑ ↓ Entrée Échap · Manette : croix / stick, A valide, B retour · Dernier mode : ${s.playerCount} joueur(s)`),
+      h('p', { class: 'menu-hint' }, 'Flèches pour choisir · Entrée valide · Échap revient · Manette : croix, A valide, B retour'),
       h('p', { class: 'menu-hint', text: this.deps.audio.unlocked ? 'Son actif' : 'Son : activé au premier clic ou à la première touche' }),
     );
   }
 
-  private buildMode(): HTMLElement {
+  /**
+   * Un mode : le nombre de joueurs, puis une carte = une partie. Depuis l'écran de fin (en jeu),
+   * choisir une carte relance tout de suite sur celle-ci.
+   */
+  private buildMode(mode: LevelMode): HTMLElement {
     const s = this.deps.settings.get();
-    const setCount = (n: 1 | 2) => {
-      this.deps.settings.update((st) => (st.playerCount = n));
-      this.render();
-    };
-    const one = this.btn('1 joueur', () => setCount(1), { 'data-nav-group': 'count', 'aria-pressed': String(s.playerCount === 1) });
-    const two = this.btn('2 joueurs', () => setCount(2), { 'data-nav-group': 'count', 'aria-pressed': String(s.playerCount === 2) });
-    one.classList.toggle('selected', s.playerCount === 1);
-    two.classList.toggle('selected', s.playerCount === 2);
-    const level = LEVEL_INFOS[s.levelId] ?? LEVEL_INFOS[0];
+    const inGame = this.stack.includes('pause') || this.stack.includes('complete');
+    const maps = LEVEL_INFOS.filter((l) => l.mode === mode);
+    const focusId = maps.some((m) => m.id === s.levelId) ? s.levelId : maps[0]?.id;
+    const list = maps.map((info) => {
+      const b = this.btn([h('span', { class: 'map-name', text: info.name }), h('span', { class: 'map-sub', text: info.subtitle })], () => this.launch(info.id, inGame), {
+        class: 'menu-btn map-btn',
+        'data-nav-default': info.id === focusId,
+      });
+      b.classList.toggle('selected', info.id === s.levelId);
+      return b;
+    });
+    const devices = h('p', { class: 'menu-note devices-note', text: this.devicesText() });
+    // 1 ou 2 joueurs : mis à jour sur place, le focus reste sur le sélecteur.
+    const counts = ([1, 2] as const).map((n) => {
+      const b = this.btn(`${n} joueur${n > 1 ? 's' : ''}`, () => {
+        this.deps.settings.update((st) => (st.playerCount = n));
+        for (const [k, x] of counts.entries()) x.classList.toggle('selected', k + 1 === n);
+        devices.textContent = this.devicesText();
+      }, { 'data-nav-group': 'count' });
+      b.classList.toggle('selected', s.playerCount === n);
+      return b;
+    });
+    const lead = mode === 'race' ? `${MODE_LEAD.race} ${this.restartKeyLabel()} recommence à zéro, chrono compris.` : MODE_LEAD.kills;
     return h(
       'div',
       { class: 'menu-screen' },
       this.panel(
-        'Mode',
-        h('div', { class: 'menu-row' }, one, two),
-        h(
-          'div',
-          { class: 'menu-row' },
-          h('span', { class: 'menu-label', text: 'Carte' }),
-          this.btn(`${level.name} …`, () => this.push('maps')),
-        ),
-        h('p', { class: 'menu-note', text: level.subtitle }),
-        this.deviceAssignment(),
-        this.btn('Lancer', () => this.deps.game.start(this.deps.settings.get().playerCount)),
+        LEVEL_MODE_LABEL[mode],
+        h('p', { class: 'menu-note', text: lead }),
+        inGame ? null : h('div', { class: 'menu-row' }, ...counts),
+        inGame ? h('p', { class: 'menu-note', text: 'Choisir une carte relance la partie immédiatement.' }) : devices,
+        h('div', { class: 'map-list' }, ...list),
         this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
       ),
     );
   }
 
-  /** Sélecteur de carte : les 4 difficultés, applicable aussi depuis la pause (relance la partie). */
-  private buildMaps(): HTMLElement {
-    const s = this.deps.settings.get();
-    // En partie (pause ou fin de niveau), on applique tout de suite ; au menu, on prépare la suivante.
-    const fromPause = this.stack.includes('pause') || this.stack.includes('complete');
-    let group: LevelMode | null = null;
-    const rows: HTMLElement[] = [];
-    for (const info of LEVEL_INFOS) {
-      if (info.mode !== group) {
-        group = info.mode;
-        rows.push(h('div', { class: 'menu-group', text: LEVEL_MODE_LABEL[group] }));
-      }
-      const b = this.btn(info.name, () => {
-        if (fromPause) this.deps.game.setLevel(info.id);
-        else this.deps.settings.update((st) => (st.levelId = info.id));
-        // setLevel relance la partie (et referme le menu) ; sinon on remonte d'un écran.
-        if (this.deps.game.phase !== 'playing') this.back();
-      }, { 'data-nav-group': 'map', 'aria-pressed': String(s.levelId === info.id) });
-      b.classList.toggle('selected', s.levelId === info.id);
-      rows.push(h('div', { class: 'bind-row' }, h('div', { class: 'bind-label' }, h('div', { text: info.name }), h('small', { text: info.subtitle })), h('div', { class: 'bind-slots' }, b)));
+  /** Lance la carte (menu principal) ou relance la partie dessus (écran de fin). */
+  private launch(levelId: number, inGame: boolean): void {
+    const g = this.deps.game;
+    if (inGame) {
+      g.setLevel(levelId);
+      if (g.phase !== 'playing') this.back();
+      return;
     }
-    return h(
-      'div',
-      { class: 'menu-screen wide' },
-      this.panel(
-        'Carte',
-        h('p', { class: 'menu-note', text: fromPause ? 'Choisir une carte relance la partie immédiatement.' : 'Élimination : vider le stock d\'ennemis. Chrono : cartes longues, atteindre l\'arrivée.' }),
-        h('div', { class: 'bind-table' }, ...rows),
-        this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
-      ),
-    );
+    this.deps.settings.update((st) => (st.levelId = levelId));
+    g.start(this.deps.settings.get().playerCount);
+  }
+
+  /** Qui joue avec quoi, en une ligne (on change ça dans Paramètres › Contrôles). */
+  private devicesText(): string {
+    const s = this.deps.settings.get();
+    const name = (i: number): string => (s.devices[i].kind === 'kbm' ? 'clavier + souris' : 'manette');
+    const who = s.playerCount === 2 ? `J1 : ${name(0)} · J2 : ${name(1)}` : `Joueur 1 : ${name(0)}`;
+    return `${who} (Paramètres › Contrôles pour changer)`;
+  }
+
+  /** Touche de « Recommencer » telle qu'affichée sur ce clavier (R par défaut). */
+  private restartKeyLabel(): string {
+    const code = this.deps.settings.get().keyboard.restart[0];
+    return code ? keyCodeLabel(code, this.layoutMap) : 'Recommencer';
   }
 
   private deviceAssignment(): HTMLElement {
@@ -461,6 +482,12 @@ export class Menu {
       this.deps.settings.update((st) => (st.cameraMode = cam.value === 'split' ? 'split' : 'single'));
       this.deps.sfx.menuMove();
     });
+    const toolsLabel = (): string => (this.deps.settings.get().debug.showPanels ? 'Outils de debug : affichés' : 'Outils de debug : masqués');
+    // Mis à jour sur place : le focus reste sur l'interrupteur.
+    const tools = this.btn(toolsLabel(), () => {
+      this.deps.settings.update((st) => (st.debug.showPanels = !st.debug.showPanels));
+      tools.textContent = toolsLabel();
+    });
     const fs = this.btn(document.fullscreenElement ? 'Quitter le plein écran' : 'Plein écran', () => {
       if (document.fullscreenElement) void document.exitFullscreen();
       else void document.documentElement.requestFullscreen().catch(() => undefined);
@@ -470,28 +497,31 @@ export class Menu {
       'div',
       { class: 'menu-screen' },
       this.panel(
-        'Réglages',
+        'Paramètres',
         h('div', { class: 'menu-row' }, h('span', { class: 'menu-label', text: 'Volume général' }), master, masterVal),
         h('div', { class: 'menu-row' }, h('span', { class: 'menu-label', text: 'Volume effets' }), sfx, sfxVal),
         h('div', { class: 'menu-row' }, h('span', { class: 'menu-label', text: 'Caméra (2 joueurs)' }), cam),
         fs,
         this.stack.includes('pause') ? null : this.btn('Contrôles', () => this.push('controls')),
+        tools,
+        h('p', { class: 'menu-note', text: "Outils de debug : panneaux DEBUG, CARTES et BUILDS à droite de l'écran, mesures (fps, ticks) dans le HUD. Raccourci : F1." }),
         this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
       ),
     );
   }
 
+  /** Échap : continuer, recommencer, ou quitter au menu. */
   private buildPause(): HTMLElement {
     const g = this.deps.game;
+    const net = this.deps.net.active;
     return h(
       'div',
       { class: 'menu-screen' },
       this.panel(
         'Pause',
-        this.btn('Reprendre', () => g.resume()),
-        this.deps.net.active ? null : this.btn('Recommencer', () => g.restart()),
-        this.btn('Réglages', () => this.push('settings')),
-        this.deps.net.active
+        this.btn('Continuer', () => g.resume()),
+        net ? null : this.btn(g.isRace ? `Recommencer (${this.restartKeyLabel()})` : 'Recommencer', () => g.restart()),
+        net
           ? this.btn('Quitter la session en ligne', () => this.deps.net.leave(), { class: 'menu-btn secondary' })
           : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
       ),
@@ -525,8 +555,8 @@ export class Menu {
         }),
         perPlayer,
         guest ? h('p', { class: 'menu-note', text: 'En ligne, c\'est l\'hôte qui relance la manche ou change de carte.' }) : null,
-        guest ? null : this.btn('Recommencer le niveau', () => g.restart()),
-        guest ? null : this.btn('Changer de carte', () => this.push('maps')),
+        guest ? null : this.btn(race ? `Recommencer (${this.restartKeyLabel()})` : 'Recommencer le niveau', () => g.restart()),
+        guest ? null : this.btn('Changer de carte', () => this.push(info?.mode ?? 'kills')),
         this.btn('Continuer à jouer', () => g.resumeAfterComplete(), { class: 'menu-btn secondary' }),
         net ? this.btn('Quitter la session', () => this.deps.net.leave(), { class: 'menu-btn secondary' }) : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
       ),
@@ -631,7 +661,7 @@ export class Menu {
     }
     if (a === 'start') {
       if (this.current === 'pause') this.deps.game.resume();
-      else if (this.current === 'title') this.push('mode');
+      else if (this.current === 'title') this.push((LEVEL_INFOS[this.deps.settings.get().levelId] ?? LEVEL_INFOS[0]).mode);
       return;
     }
     this.nav.handle(a);

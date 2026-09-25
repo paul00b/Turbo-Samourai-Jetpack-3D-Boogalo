@@ -106,6 +106,11 @@ export class Game {
     this.loop.resume();
   }
 
+  /** Carte en cours en mode course (atteindre l'arrivée), par opposition à l'arcade (éliminer). */
+  get isRace(): boolean {
+    return getLevel(this.state.levelId).mode === 'race';
+  }
+
   /** Recommencer : en ligne, seul l'hôte décide, et les deux sims repartent ensemble au tick 0. */
   restart(): void {
     if (this.net) {
@@ -328,6 +333,9 @@ export class Game {
   frame(nowMs: number): void {
     if (this.phase === 'playing' && this.deps.mapper.pausePressed()) this.pause();
     else if (this.phase !== 'playing') this.deps.mapper.pausePressed(); // garde le front à jour
+    // Mode course : « Recommencer » (R) repart de zéro, chrono compris, en jeu comme à l'arrivée.
+    const restart = this.deps.mapper.restartPressed();
+    if (restart && this.isRace && (this.phase === 'playing' || this.phase === 'complete')) this.restart();
     this.loop.advance(nowMs, this.tick);
     // Fin de niveau constatée dans les ticks qu'on vient de jouer : on bascule tout de suite, mais
     // on rend quand même la frame (le joueur doit voir l'état final derrière l'écran de fin).

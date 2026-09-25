@@ -36,6 +36,7 @@ export class InputMapper {
   private readonly stick = { x: 0, y: 0 };
   private readonly world = { x: 0, y: 0 };
   private pauseWasDown = false;
+  private restartWasDown = false;
 
   constructor(
     private readonly kbm: KeyboardMouse,
@@ -155,6 +156,16 @@ export class InputMapper {
     }
     const edge = down && !this.pauseWasDown;
     this.pauseWasDown = down;
+    return edge;
+  }
+
+  /** Front montant de "recommencer" (clavier ou manette), même latch que la pause. */
+  restartPressed(): boolean {
+    const s = this.settings();
+    let down = this.kbm.isActive(s.keyboard.restart);
+    for (const p of this.pads.connected()) if (this.pads.isActive(p, s.gamepad.restart)) down = true;
+    const edge = down && !this.restartWasDown;
+    this.restartWasDown = down;
     return edge;
   }
 

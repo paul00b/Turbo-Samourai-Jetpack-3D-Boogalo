@@ -77,10 +77,12 @@ export class FocusNav {
   private screen: HTMLElement | null = null;
   onMove: (() => void) | null = null;
 
+  /** Focus initial : le premier [data-nav-default] de l'écran, sinon le premier élément. */
   attach(screen: HTMLElement): void {
     this.screen = screen;
     this.refresh();
-    this.index = 0;
+    const preferred = this.items.findIndex((el) => el.dataset.navDefault !== undefined);
+    this.index = preferred >= 0 ? preferred : 0;
     this.applyFocus(false);
   }
 
@@ -157,6 +159,18 @@ export class FocusNav {
       el.selectedIndex = (el.selectedIndex + dir + n) % n;
       el.dispatchEvent(new Event('change', { bubbles: true }));
       return true;
+    }
+    // Rangée (data-nav-row) : gauche/droite déplace le focus dans la rangée, sans valider.
+    const row = el.dataset.navRow;
+    if (row) {
+      const siblings = this.items.filter((x) => x.dataset.navRow === row);
+      const next = siblings[(siblings.indexOf(el) + dir + siblings.length) % siblings.length];
+      if (next && next !== el) {
+        this.index = this.items.indexOf(next);
+        this.applyFocus(true);
+        return true;
+      }
+      return false;
     }
     // Groupe de boutons "radio" : gauche/droite change de bouton dans le même groupe
     const group = el.dataset.navGroup;

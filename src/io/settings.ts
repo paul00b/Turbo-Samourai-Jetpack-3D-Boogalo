@@ -29,6 +29,8 @@ export interface DebugVisuals {
   panelOpen: boolean;
   /** Onglet latéral ouvert ('debug' | 'cartes' | 'réseau'). */
   panelTab: string;
+  /** Outils de debug affichés : panneaux DEBUG · CARTES · BUILDS et mesures du HUD (Paramètres, F1). */
+  showPanels: boolean;
 }
 
 export interface CameraSettings {
@@ -94,7 +96,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ],
   keyboard: cloneKeyboardBindings(DEFAULT_KEYBOARD),
   gamepad: cloneGamepadBindings(DEFAULT_GAMEPAD),
-  debug: { showHitboxes: false, showVelocity: false, showTrail: true, trailSeconds: 3, panelOpen: true, panelTab: 'debug' },
+  debug: { showHitboxes: false, showVelocity: false, showTrail: true, trailSeconds: 3, panelOpen: true, panelTab: 'debug', showPanels: false },
   // Zoom solo 1,25 : 2,5 px écran par px d'art, ramené à un nombre entier par « Pixels entiers ».
   camera: { zoomMin: 0.3, zoomMax: 0.9, soloZoom: 1.25, splitZoom: 0.8, margin: 260, smoothing: 7 },
   render: { mode: 'art', theme: 'auto', pixelSnap: true },

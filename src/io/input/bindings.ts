@@ -4,7 +4,7 @@
  * Manette : bouton (index) ou axe (index + signe), sur le mapping "standard" du W3C quand il existe.
  */
 
-export type Action = 'hookL' | 'hookR' | 'reel' | 'jet' | 'grab' | 'left' | 'right' | 'pause';
+export type Action = 'hookL' | 'hookR' | 'reel' | 'jet' | 'grab' | 'left' | 'right' | 'pause' | 'restart';
 
 export const ACTIONS: readonly { id: Action; label: string; hint: string }[] = [
   { id: 'hookL', label: 'Grappin gauche', hint: 'maintenir = accroché et rétraction auto, relâcher = lâcher' },
@@ -15,6 +15,7 @@ export const ACTIONS: readonly { id: Action; label: string; hint: string }[] = [
   { id: 'left', label: 'Marche / balancier gauche', hint: 'au sol : marche ; suspendu : pompe le balancier' },
   { id: 'right', label: 'Marche / balancier droite', hint: 'au sol : marche ; suspendu : pompe le balancier' },
   { id: 'pause', label: 'Pause', hint: '' },
+  { id: 'restart', label: 'Recommencer', hint: 'mode course : repart de zéro, chrono compris' },
 ];
 
 export type KeyboardBindings = Record<Action, string[]>;
@@ -32,9 +33,10 @@ export const DEFAULT_KEYBOARD: KeyboardBindings = {
   left: ['KeyA'], // Q sur AZERTY
   right: ['KeyD'],
   pause: ['Escape'],
+  restart: ['KeyR'],
 };
 
-/** Mapping "standard" : LB=4 RB=5 LT=6 RT=7 A=0 B=1 X=2 Y=3 Start=9, stick gauche axes 0/1, droit 2/3. */
+/** Mapping "standard" : LB=4 RB=5 LT=6 RT=7 A=0 B=1 X=2 Y=3 Select=8 Start=9, stick gauche axes 0/1, droit 2/3. */
 export const DEFAULT_GAMEPAD: GamepadBindings = {
   hookL: [{ type: 'button', index: 4 }],
   hookR: [{ type: 'button', index: 5 }],
@@ -44,6 +46,7 @@ export const DEFAULT_GAMEPAD: GamepadBindings = {
   left: [{ type: 'axis', index: 0, sign: -1 }, { type: 'button', index: 14 }],
   right: [{ type: 'axis', index: 0, sign: 1 }, { type: 'button', index: 15 }],
   pause: [{ type: 'button', index: 9 }],
+  restart: [{ type: 'button', index: 8 }],
 };
 
 /** Navigation menu manette (non remappable) : croix + stick gauche, A valide, B retour. */

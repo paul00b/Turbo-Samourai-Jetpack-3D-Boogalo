@@ -1,6 +1,7 @@
 /**
  * Coque des panneaux latéraux : une colonne d'onglets verticaux + un panneau visible à la fois.
  * DEBUG et CARTES partagent ce shell (même style, même largeur, même ouverture/fermeture).
+ * Le tout reste masqué tant que les outils de debug ne sont pas affichés (Paramètres, ou F1).
  */
 import type { SettingsStore } from '../io/settings';
 import { clear, h } from './dom';
@@ -27,6 +28,23 @@ export class SidePanelHost {
   ) {
     clear(root);
     root.append(this.tabs);
+    settings.subscribe(() => this.applyVisibility());
+  }
+
+  get shown(): boolean {
+    return this.settings.get().debug.showPanels;
+  }
+
+  /** Affiche ou masque les outils (onglets et panneaux). */
+  setShown(v: boolean): void {
+    if (v !== this.shown) this.settings.update((st) => (st.debug.showPanels = v));
+    this.applyVisibility();
+  }
+
+  private applyVisibility(): void {
+    const s = this.settings.get().debug;
+    this.root.classList.toggle('hidden', !s.showPanels);
+    document.body.classList.toggle('debug-open', s.showPanels && s.panelOpen);
   }
 
   /** Crée un onglet et retourne le panneau vide à remplir. */
@@ -52,10 +70,13 @@ export class SidePanelHost {
     return s.panelOpen ? s.panelTab : null;
   }
 
-  /** Clic sur un onglet : ouvre celui-ci, ou referme si c'était déjà l'onglet courant. */
+  /** Clic sur un onglet (ou F1…) : ouvre celui-ci, ou referme si c'était déjà l'onglet courant. Outils masqués : les affiche. */
   toggle(id: string): void {
     const s = this.settings.get().debug;
-    if (s.panelOpen && s.panelTab === id) this.apply(false, id);
+    if (!s.showPanels) {
+      this.setShown(true);
+      this.apply(true, id);
+    } else if (s.panelOpen && s.panelTab === id) this.apply(false, id);
     else this.apply(true, id);
   }
 
@@ -73,7 +94,7 @@ export class SidePanelHost {
       st.debug.panelTab = tab;
     });
     this.root.classList.toggle('open', open);
-    document.body.classList.toggle('debug-open', open);
+    this.applyVisibility();
     for (const e of this.entries) {
       const active = open && e.id === tab;
       e.panel.classList.toggle('active', active);

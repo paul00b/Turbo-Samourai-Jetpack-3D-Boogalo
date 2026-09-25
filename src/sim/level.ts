@@ -381,7 +381,7 @@ export const LEVEL_DEFS: readonly LevelDef[] = [
   {
     name: 'Difficile',
     mode: 'kills',
-    subtitle: 'Usine : ancrages espaces, plafonds lisses, cave piegee.',
+    subtitle: 'Usine : ancrages espacés, plafonds lisses, cave piégée.',
     rows: MAP_DIFFICILE,
     labels: [
     { name: 'DIFFICILE · USINE : ancrages espaces, plafonds lisses', x: 4, y: 3 },
@@ -391,7 +391,7 @@ export const LEVEL_DEFS: readonly LevelDef[] = [
   {
     name: 'Horrible',
     mode: 'kills',
-    subtitle: 'Broyeur : deux ancrages par ecran, cave entierement piegee.',
+    subtitle: 'Broyeur : deux ancrages par écran, cave entièrement piégée.',
     rows: MAP_HORRIBLE,
     labels: [
     { name: 'HORRIBLE · BROYEUR : deux ancrages par ecran, le reste est lisse', x: 4, y: 3 },
@@ -401,7 +401,7 @@ export const LEVEL_DEFS: readonly LevelDef[] = [
   {
     name: 'Sprint',
     mode: 'race',
-    subtitle: 'Course : tout droit, ancrages partout, aucun piege.',
+    subtitle: 'Tout droit, ancrages partout, aucun piège.',
     rows: MAP_SPRINT,
     labels: [
     { name: 'CHRONO · SPRINT : tout droit, ancrages partout', x: 4, y: 3 },
@@ -411,7 +411,7 @@ export const LEVEL_DEFS: readonly LevelDef[] = [
   {
     name: 'Autoroute',
     mode: 'race',
-    subtitle: 'Course : trous vers la cave, plafonds lisses, il faut de la vitesse.',
+    subtitle: 'Trous vers la cave, plafonds lisses : il faut de la vitesse.',
     rows: MAP_AUTOROUTE,
     labels: [
     { name: 'CHRONO · AUTOROUTE : trous, plafonds lisses', x: 4, y: 3 },
@@ -421,7 +421,7 @@ export const LEVEL_DEFS: readonly LevelDef[] = [
   {
     name: 'Gouffre',
     mode: 'race',
-    subtitle: 'Course : ancrages rares, cave entierement piegee, longue.',
+    subtitle: 'Longue, ancrages rares, cave entièrement piégée.',
     rows: MAP_GOUFFRE,
     labels: [
     { name: 'CHRONO · GOUFFRE : ancrages rares, cave piegee', x: 4, y: 3 },
@@ -511,9 +511,10 @@ export interface LevelInfo {
 /** Ce que le menu affiche : pas besoin d'exposer les tuiles à l'UI. */
 export const LEVEL_INFOS: readonly LevelInfo[] = LEVELS.map((l, id) => ({ id, name: l.name, mode: l.mode, subtitle: l.subtitle }));
 
+/** Les deux modes du menu principal : l'arcade (éliminer le stock d'ennemis) et la course (l'arrivée). */
 export const LEVEL_MODE_LABEL: Record<LevelMode, string> = {
-  kills: 'Élimination',
-  race: 'Chrono',
+  kills: 'Arcade',
+  race: 'Course',
 };
 
 export function clampLevelId(id: number): number {
