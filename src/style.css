@@ -69,6 +69,18 @@ body.debug-open #hud, body.debug-open #menu { right: 360px; }
 .hud-message { position: absolute; top: 150px; left: 50%; transform: translateX(-50%); padding: 8px 14px; font-size: 14px; color: var(--gold); background: rgba(224, 179, 90, 0.1); border: 1px solid var(--gold); white-space: pre-line; text-align: center; }
 .hud-complete { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 16px 28px; font-size: 28px; letter-spacing: 0.08em; color: var(--killer); background: rgba(8, 10, 16, 0.84); border-left: 4px solid var(--killer); white-space: nowrap; }
 @keyframes blink { 50% { opacity: 0.35; } }
+/* Carton-titre de début de manche. */
+.hud-card { position: absolute; left: 50%; top: 30%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 6px; opacity: 0; pointer-events: none; white-space: nowrap; }
+.hud-card.show { animation: stage-card 2.6s steps(26, end) forwards; }
+.hud-card-name { font-size: clamp(26px, 4vw, 48px); letter-spacing: 0.08em; color: var(--gold); text-shadow: 0 3px 0 #000, 3px 0 0 #000, 0 0 24px rgba(224, 179, 90, 0.25); }
+.hud-card-sub { font-size: 14px; letter-spacing: 0.14em; color: #dde3ea; }
+@keyframes stage-card {
+  0% { opacity: 0; transform: translate(-50%, -40%); }
+  12% { opacity: 1; transform: translate(-50%, -50%); }
+  75% { opacity: 1; transform: translate(-50%, -50%); }
+  100% { opacity: 0; transform: translate(-50%, -54%); }
+}
+@media (prefers-reduced-motion: reduce) { .hud-card.show { animation-duration: 1.6s; animation-timing-function: step-end; } }
 /* Réticule en pixels : quatre carrés et un point, contour sombre, lisible sur tous les fonds. */
 .crosshair { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
 .crosshair i, .crosshair b { position: absolute; width: 4px; height: 4px; background: #fff; box-shadow: 0 0 0 2px rgba(6, 6, 11, 0.85); }
