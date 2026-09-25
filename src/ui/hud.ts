@@ -1,6 +1,7 @@
 /** HUD permanent (DOM) : vitesse en gros, jauge de chauffe, chrono, FPS, TPS, PV, morts. */
 import { DT, getLevel, type GameState } from '../sim';
 import type { GameLoop } from '../app/gameLoop';
+import { gamepadControlLabel, keyCodeLabel } from '../io/input/bindings';
 import type { InputMapper } from '../io/input/inputMapper';
 import type { Settings } from '../io/settings';
 import { clear, h } from './dom';
@@ -36,6 +37,8 @@ export class Hud {
   private readonly stageName: HTMLElement;
   private readonly stageSub: HTMLElement;
   private readonly modeLabel: HTMLElement;
+  /** Rappel discret de la touche « Recommencer », en course. */
+  private readonly hint: HTMLElement;
   private readonly card: HTMLElement;
   private readonly cardName: HTMLElement;
   private readonly cardSub: HTMLElement;
@@ -43,6 +46,8 @@ export class Hud {
   private bannerAllowed = true;
   private lastTick = -1;
   private cardPending = false;
+  /** Carte du dernier carton-titre : recommencer la même ne le rejoue pas. */
+  private cardLevel = -1;
 
   constructor(private readonly root: HTMLElement) {
     clear(root);
@@ -56,10 +61,11 @@ export class Hud {
     this.stageSub = h('span', { class: 'hud-stage-sub', text: '' });
     this.stage = h('div', { class: 'hud-stage' }, this.stageName, this.stageSub);
     this.modeLabel = h('div', { class: 'hud-mode hidden', text: '' });
+    this.hint = h('div', { class: 'hud-hint hidden', text: '' });
     this.cardName = h('div', { class: 'hud-card-name', text: '' });
     this.cardSub = h('div', { class: 'hud-card-sub', text: '' });
     this.card = h('div', { class: 'hud-card' }, this.cardName, this.cardSub);
-    root.append(this.globalChrono, this.objective, this.complete, this.stats, this.message, this.stage, this.modeLabel, this.card, this.crosshair);
+    root.append(this.globalChrono, this.objective, this.complete, this.stats, this.message, this.stage, this.modeLabel, this.hint, this.card, this.crosshair);
     for (let i = 0; i < 2; i++) {
       const speed = h('div', { class: 'hud-speed', text: '0' });
       const heatFill = h('div', { class: 'hud-heat-fill' });
@@ -118,11 +124,13 @@ export class Hud {
     const textTick = now - this.lastTextUpdate > 50; // 20 Hz pour le texte, la barre de chauffe chaque frame
     if (textTick) this.lastTextUpdate = now;
     this.root.classList.toggle('two-players', state.playerCount === 2);
-    // Nouvelle manche (le tick repart de zéro) : carton-titre du niveau, qui s'efface tout seul.
-    if (state.tick < this.lastTick) this.cardPending = true;
+    // Nouvelle carte (le tick repart de zéro ailleurs) : carton-titre, qui s'efface tout seul.
+    // Recommencer la même carte (R en course) repart tout de suite, sans carton.
+    if (state.tick < this.lastTick && state.levelId !== this.cardLevel) this.cardPending = true;
     this.lastTick = state.tick;
     if (stage && this.cardPending) {
       this.cardPending = false;
+      this.cardLevel = state.levelId;
       this.showCard(stage);
     }
     if (textTick) {
@@ -133,6 +141,11 @@ export class Hud {
       }
       this.modeLabel.classList.toggle('hidden', !modeText);
       if (this.modeLabel.textContent !== modeText) this.modeLabel.textContent = modeText;
+      const hint = getLevel(state.levelId).mode === 'race' && !state.finished ? restartHint(settings) : '';
+      this.hint.classList.toggle('hidden', !hint);
+      if (this.hint.textContent !== hint) this.hint.textContent = hint;
+      // Les mesures (fps, ticks, rendu) font partie des outils de debug.
+      this.stats.classList.toggle('hidden', !settings.debug.showPanels);
     }
 
     for (let i = 0; i < 2; i++) {
@@ -189,7 +202,16 @@ export class Hud {
   }
 }
 
-/** Objectif courant : progression vers l'arrivée (chrono), ou stock d'ennemis (élimination). */
+/** « R recommencer » : la touche du clavier si quelqu'un y joue, sinon le bouton de manette. */
+export function restartHint(settings: Settings): string {
+  const kbm = settings.devices.some((d, i) => d.kind === 'kbm' && i < settings.playerCount);
+  const key = settings.keyboard.restart[0];
+  const pad = settings.gamepad.restart[0];
+  const label = kbm && key ? keyCodeLabel(key) : pad ? gamepadControlLabel(pad, true) : key ? keyCodeLabel(key) : '';
+  return label ? `${label} recommencer` : '';
+}
+
+/** Objectif courant : progression vers l'arrivée (course), ou stock d'ennemis (arcade). */
 export function objectiveText(state: GameState): string {
   const level = getLevel(state.levelId);
   if (level.mode === 'race') {

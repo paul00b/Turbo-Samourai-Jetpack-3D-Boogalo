@@ -358,7 +358,7 @@ export class DebugPanel {
 
   update(nowMs: number): void {
     const s = this.deps.settings.get().debug;
-    if (!s.panelOpen || s.panelTab !== 'debug') return;
+    if (!s.showPanels || !s.panelOpen || s.panelTab !== 'debug') return;
     if (nowMs - this.lastInfo < 250) return;
     this.lastInfo = nowMs;
     const g = this.deps.game;

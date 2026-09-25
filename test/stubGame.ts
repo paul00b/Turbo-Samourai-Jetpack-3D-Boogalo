@@ -13,6 +13,8 @@ export interface StubOptions {
   playerCount?: 1 | 2;
   /** Inputs locaux en mode réseau : appelé avec le slot du joueur local. */
   sampleNet?: (state: GameState, slot: number, scratch: PlayerInput[]) => PlayerInput;
+  /** Front de la touche « Recommencer » (R), interrogé à chaque frame. */
+  restartPressed?: () => boolean;
 }
 
 export interface StubGame {
@@ -42,6 +44,7 @@ export function makeStubGame(opts: StubOptions = {}): StubGame {
       flush: noop,
       suppressPauseEdge: noop,
       pausePressed: () => false,
+      restartPressed: () => opts.restartPressed?.() ?? false,
     },
     kbm: { captureKeys: false },
     sfx: { silenceLoops: noop, handleEvents: noop, update: noop },

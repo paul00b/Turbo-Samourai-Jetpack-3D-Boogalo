@@ -86,9 +86,10 @@ Coût mesuré : ~7 µs par tick pour 2 joueurs (4 sous-pas × 6 itérations) sou
 | Jetpack (orienté vers le curseur / stick droit) | Espace ou Maj gauche | RT / R2 |
 | Marche (ridiculement lente) ; suspendu : pompe le balancier | Q / D (touches physiques A/D, donc Q/D sur AZERTY) | Stick gauche, croix |
 | Grab / cut manuel | E | A / ✕ (ou X / □) |
-| Pause | Échap | Start / Options |
+| Pause : continuer, recommencer, quitter au menu | Échap | Start / Options |
+| Recommencer (mode course) : repart de zéro, chrono compris, en jeu comme à l'arrivée | R | Select / Share |
 
-Tout est remappable dans **Contrôles** (clavier et manette). Les touches sont identifiées par
+Tout est remappable dans **Paramètres › Contrôles** (clavier et manette). Les touches sont identifiées par
 `KeyboardEvent.code` (position physique) ; le libellé affiché utilise la disposition réelle quand le
 navigateur expose `navigator.keyboard.getLayoutMap()` (Chrome).
 
@@ -96,7 +97,7 @@ Manette : la Gamepad API ne liste une manette qu'après un premier appui, le HUD
 « appuie sur un bouton ». Les manettes non « standard » gardent le mapping par défaut en meilleur effort
 et un avertissement invite à remapper. Deadzone radiale de 0.18 avec remise à l'échelle.
 
-Raccourcis debug : **F1** panneau, **F2** mode caméra, **F3** hitboxes, **F4** vecteurs de vélocité, **F6** trail, **F8** mode de rendu (Jeu, Valeurs, Couche de jeu, Grey-box).
+Raccourcis debug : **F1** outils de debug (les affiche s'ils sont masqués), **F2** mode caméra, **F3** hitboxes, **F4** vecteurs de vélocité, **F6** trail, **F8** mode de rendu (Jeu, Valeurs, Couche de jeu, Grey-box).
 
 ## Multijoueur en ligne (sessions à code)
 
@@ -157,9 +158,25 @@ WebSockets convient aussi (Fly.io, Railway, un VPS). Il fournit `PORT`, que le r
 Ce qui manque pour un vrai jeu en ligne : la reconnexion après coupure et la détection de désync
 (comparaison périodique de hash).
 
+## Menus
+
+Lancer une partie tient en deux choix. Le **menu principal** propose les deux modes en grand,
+**Course** (atteindre l'arrivée le plus vite possible) et **Arcade** (éliminer tous les ennemis de la
+carte), plus Multijoueur en ligne et Paramètres. Chaque mode ouvre la liste de ses cartes, avec le
+choix 1 ou 2 joueurs : une carte = une partie. Le focus est toujours sur le dernier choix (le mode
+joué en dernier, puis sa carte) : pour rejouer, Entrée, Entrée.
+
+- **Échap** en partie : Continuer, Recommencer, Quitter au menu.
+- **R** en course : repart de zéro, chrono compris, sans carton-titre (il ne s'affiche qu'en arrivant
+  sur une carte). Le HUD le rappelle en bas à droite ; en arcade, on recommence depuis la pause.
+- **Paramètres** : volumes, caméra à deux joueurs, plein écran, Contrôles (remapping, périphérique de
+  chaque joueur), et les **outils de debug**, masqués par défaut.
+- À l'arrivée (ou quand le dernier ennemi tombe), l'écran de fin propose Recommencer, Changer de
+  carte (la liste du même mode), Continuer à jouer et Quitter au menu.
+
 ## Multijoueur local
 
-- 1 ou 2 joueurs (menu Mode ou panneau de debug). Assignation joueur → périphérique explicite
+- 1 ou 2 joueurs (écran Course ou Arcade, ou panneau de debug). Assignation joueur → périphérique explicite
   (`settings.devices`), inversable, un seul joueur peut être sur clavier+souris.
 - Deux caméras à comparer, basculables à chaud (F2, réglages, debug) : **unique** englobant les deux joueurs
   avec zoom dynamique borné (zoom min/max, marge, lissage réglables), ou **split vertical**.
@@ -168,13 +185,15 @@ Ce qui manque pour un vrai jeu en ligne : la reconnexion après coupure et la d�
 
 ## Panneaux latéraux (DEBUG · CARTES · BUILDS)
 
-Trois onglets verticaux à droite, même style, un seul panneau ouvert à la fois. **F1** ouvre DEBUG,
-**F5** CARTES, **F7** BUILDS ; recliquer sur l'onglet actif referme. L'onglet ouvert est persisté.
+Trois onglets verticaux à droite, même style, un seul panneau ouvert à la fois. **Masqués par
+défaut**, avec les mesures du HUD (fps, ticks, rendu) : **Paramètres › Outils de debug** les affiche,
+ou **F1** (DEBUG), **F5** (CARTES), **F7** (BUILDS). Recliquer sur l'onglet actif referme. L'onglet
+ouvert et l'affichage des outils sont persistés.
 
 **CARTES** (`src/ui/mapPanel.ts`) : les 4 difficultés avec un **aperçu** dessiné (minimap 1 px par
 tuile : murs, surfaces lisses, pics, spawn, ennemis), la taille, et un bouton **Appliquer** qui
-relance la partie sur cette carte sans passer par le menu. C'est le sélecteur *en partie* ; le menu
-**Jouer → Carte** ne sert plus qu'à choisir avant de lancer.
+relance la partie sur cette carte sans passer par le menu. C'est le sélecteur *en partie* ; les
+écrans **Course** et **Arcade** du menu choisissent avant de lancer.
 
 **BUILDS** (`src/ui/buildPanel.ts`, `src/io/buildsStore.ts`) : un *build* est une photo nommée et
 annotée des paramètres de sim, pour comparer des réglages de feel. On sauvegarde les params courants
@@ -220,7 +239,7 @@ e  ennemi statique            p  ennemi en patrouille lente
 
 Deux familles, distinguées par `level.mode` et regroupées dans le menu comme dans l'onglet CARTES.
 
-**Élimination** (`mode: 'kills'`) : vider le stock d'ennemis termine la manche.
+**Arcade** (`mode: 'kills'`) : vider le stock d'ennemis termine la manche.
 
 | Carte | Taille | Idée |
 |---|---|---|
@@ -229,7 +248,7 @@ Deux familles, distinguées par `level.mode` et regroupées dans le menu comme d
 | **Difficile** · Usine | 144 × 44 | Ancrages tous les 14 tuiles, longs plafonds lisses, piliers lisses, cave piégée, puits de sortie. |
 | **Horrible** · Broyeur | 156 × 48 | Ancrages tous les 19 tuiles, plafond lisse quasi partout, cave entièrement piégée. |
 
-**Chrono** (`mode: 'race'`) : cartes longues et horizontales, il faut atteindre l'**arrivée** (tuiles
+**Course** (`mode: 'race'`) : cartes longues et horizontales, il faut atteindre l'**arrivée** (tuiles
 `F`, zone verte tout à droite). La toucher fige le chrono. Les ennemis n'y sont que des obstacles.
 
 | Carte | Taille | Idée |
@@ -238,7 +257,8 @@ Deux familles, distinguées par `level.mode` et regroupées dans le menu comme d
 | **Autoroute** | 360 × 30 | Six trous vers la cave (pics au fond de trois), plafonds lisses : il faut arriver lancé. |
 | **Gouffre** | 420 × 34 | Sept trous larges, cave entièrement piégée, ancrages tous les 17 tuiles, piliers lisses. |
 
-Sélecteur de carte avant partie dans **Jouer → Carte**, et en partie dans l'onglet **CARTES** (F5).
+Sélecteur de carte avant partie dans les écrans **Course** et **Arcade** du menu, et en partie dans
+l'onglet **CARTES** (F5).
 Le choix est persisté (`settings.levelId`) et la sim référence le niveau par `state.levelId`.
 
 Trois règles de level design communes, vérifiées par `test/levels.test.ts` :
@@ -248,7 +268,7 @@ Trois règles de level design communes, vérifiées par `test/levels.test.ts` :
 2. Les pics ne sont jamais sur la ligne de jeu : ils vivent au fond de la cave, 6 à 8 tuiles sous le sol
    principal. Tomber dans un trou est un détour, pas une mort.
 3. La difficulté monte par l'espacement des ancrages et la surface lisse (`=`), pas par les pics. Couverture
-   mesurée en visant droit en haut depuis le sol : 51 / 41 / 24 / 20 % en élimination, 31 / 23 / 11 % en chrono.
+   mesurée en visant droit en haut depuis le sol : 51 / 41 / 24 / 20 % en arcade, 31 / 23 / 11 % en course.
 
 ## Objectif, compteur d'ennemis et chrono
 
@@ -260,7 +280,7 @@ L'objectif dépend du **mode de la carte** : une carte `race` se termine en fran
 (quel que soit le compteur d'ennemis), une carte `kills` en vidant le stock. Le HUD affiche la
 progression (`🏁 62 % · 84 tuiles restantes`) ou le stock restant selon le cas.
 
-- **Stock fini** (défaut, cartes élimination) : les ennemis tués ne reviennent pas. Le HUD affiche `⚔ tués / total ·
+- **Stock fini** (défaut, cartes d'arcade) : les ennemis tués ne reviennent pas. Le HUD affiche `⚔ tués / total ·
   N restants`. Quand le dernier tombe, la sim émet `levelComplete` et **fige le chrono** sur
   `finishTick` ; le jeu passe en phase **`complete`** : la boucle se gèle et l'écran de fin s'ouvre
   avec le temps, le nombre d'ennemis, le détail par joueur et quatre actions — **Recommencer le
@@ -303,7 +323,7 @@ première touche.
   au-dessus du seuil seulement, ennemis (kill traversant vs repoussée).
 - `test/levels.test.ts` : les 7 cartes parsent, bords pleins, spawn au sol et loin des pics, ancrages
   atteignables depuis le sol, pics cantonnés à la cave, arrivée présente et lointaine sur les seules
-  cartes chrono, ratio largeur/hauteur des courses.
+  cartes de course, ratio largeur/hauteur des courses.
 - `test/netcode.test.ts` : deux `Game` complets reliés par un lien simulé (latence, gigue), les états
   confirmés convergent, le rollback se déclenche vraiment, l'input local est figé par tick, un
   changement de params de l'hôte s'applique au même tick des deux côtés (y compris quand l'ordre
@@ -319,6 +339,9 @@ première touche.
   cours de partie, sérialisation des compteurs, texte d'objectif.
 - `test/gameFlow.test.ts` : bascule en phase `complete` et gel de la boucle, recommencer, changer de
   carte depuis l'écran de fin, « continuer à jouer » sans réinitialiser, non-réouverture de l'écran.
+- `test/quickStart.test.ts` : R en course repart de zéro (en jeu comme à l'arrivée), sans effet en
+  arcade ni en pause ; les deux modes du menu ; outils de debug masqués par défaut ; rappel de la
+  bonne touche dans le HUD (clavier ou manette).
 - `test/art.test.ts` : la direction artistique, sous Node. Il couvre le moteur pixel (format des couleurs,
   alpha des calques, double contour, particules), l'attribution des thèmes et l'analyse des 7 cartes.
   Pour chaque thème et chaque carte, il vérifie les règles des planches :
@@ -447,7 +470,7 @@ reste est tout ce qui compte pour jouer) ; **Grey-box** (le rendu vectoriel du p
 
 **HUD et menus** : typographie et palette de la page des planches (DotGothic16, Zen Kaku Gothic New),
 bloc joueur à bord de sa teinte, vitesse en vert au-dessus du seuil de kill et en rouge au-dessus du seuil
-de mort, nom du niveau en or, carton-titre en début de manche. Le niveau vit derrière les menus : le décor
+de mort, nom du niveau en or, carton-titre en arrivant sur une carte. Le niveau vit derrière les menus : le décor
 continue de s'animer en pause.
 
 ## Limites connues de la V1

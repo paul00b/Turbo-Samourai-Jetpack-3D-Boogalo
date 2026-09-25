@@ -61,7 +61,8 @@ body.debug-open #hud, body.debug-open #menu { right: 360px; }
 .hud-stage-name { font-size: 16px; }
 .hud-stage-sub { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; }
 #hud.two-players .hud-stage { right: auto; left: 50%; transform: translateX(-50%); align-items: center; }
-.hud-mode { position: absolute; right: 18px; bottom: 16px; padding: 2px 8px; font-size: 13px; letter-spacing: 0.06em; color: #dde3ea; background: rgba(8, 10, 16, 0.7); }
+.hud-hint { position: absolute; right: 18px; bottom: 16px; padding: 2px 8px; font-size: 13px; letter-spacing: 0.06em; color: var(--muted); background: var(--hud-bg); }
+.hud-mode { position: absolute; right: 18px; bottom: 42px; padding: 2px 8px; font-size: 13px; letter-spacing: 0.06em; color: #dde3ea; background: rgba(8, 10, 16, 0.7); }
 .hud-chrono { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 22px; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
 .hud-chrono.done { color: var(--killer); }
 .hud-objective { position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%); padding: 3px 12px; font-size: 14px; letter-spacing: 0.04em; background: var(--hud-bg); border-left: 3px solid var(--gold); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -123,6 +124,23 @@ body.debug-open #hud, body.debug-open #menu { right: 360px; }
 .menu-note { font-size: 13px; color: var(--muted); margin: 0; }
 .menu-hint { text-align: center; color: var(--muted); font-size: 12px; margin: 14px 0 0; text-shadow: 0 1px 0 #000; }
 .capture-status { color: var(--gold); font-size: 14px; }
+/* Menu principal : les deux modes en grand. */
+.title-screen { width: min(760px, 94vw); }
+.mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.menu-btn.mode-card { display: flex; flex-direction: column; gap: 8px; padding: 20px 20px 18px; min-height: 150px; background: rgba(17, 20, 30, 0.94); border-left-width: 4px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); }
+.menu-btn.mode-card.focused { background: #1a1f2d; }
+.mode-name { font-size: 30px; letter-spacing: 0.1em; text-transform: uppercase; color: #fff; text-shadow: 0 2px 0 #000; }
+.mode-card.focused .mode-name { color: var(--gold); }
+.mode-lead { font-family: var(--body); font-size: 15px; line-height: 1.4; color: var(--text); }
+.mode-meta { margin-top: auto; font-family: var(--body); font-size: 12px; color: var(--muted); }
+.title-more { margin-top: 14px; }
+@media (max-width: 560px) { .mode-cards { grid-template-columns: 1fr; } .menu-btn.mode-card { min-height: 0; } }
+/* Écran d'un mode : une carte = un bouton, qui lance la partie. */
+.map-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.menu-btn.map-btn { display: flex; flex-direction: column; gap: 4px; }
+.map-name { font-size: 18px; }
+.map-sub { font-family: var(--body); font-size: 12px; color: var(--muted); }
+.devices-note { font-size: 12px; }
 .menu-group { margin: 10px 0 2px; font-family: var(--pixel); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); border-bottom: 1px solid var(--line); padding-bottom: 4px; }
 .bind-table { display: flex; flex-direction: column; gap: 6px; }
 .bind-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid #1b2030; }
