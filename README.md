@@ -13,7 +13,7 @@ thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 35 tests : déterminisme, snapshot/rollback, physique, garde-fou statique
+npm test             # 255 tests : déterminisme, rollback, physique, réseau, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
@@ -178,6 +178,10 @@ longueur mini de corde, friction au sol, PV, fenêtres du cut manuel, respawn en
 
 Toggles : ennemis, ennemis létaux, cut auto/manuel, maintien = accroché, 1/2 joueurs, mode caméra, hitboxes, vecteurs, trail.
 
+En tête du panneau, la section **Rendu** règle le mode (Jeu, Valeurs, Couche de jeu, Grey-box), le thème
+(auto ou forcé) et les pixels entiers. Elle affiche aussi le nuancier du thème affiché et les chronos du
+rendu pixel et de la cuisson.
+
 Persistance localStorage (`tsj.params.v1`, `tsj.settings.v1`). **Exporter JSON** télécharge et copie une
 config complète (params + seed + options de rendu), **Importer JSON** l'applique. Les params
 s'appliquent en live, la seed au prochain redémarrage.
@@ -290,6 +294,17 @@ première touche.
   cours de partie, sérialisation des compteurs, texte d'objectif.
 - `test/gameFlow.test.ts` : bascule en phase `complete` et gel de la boucle, recommencer, changer de
   carte depuis l'écran de fin, « continuer à jouer » sans réinitialiser, non-réouverture de l'écran.
+- `test/art.test.ts` : la direction artistique, sous Node. Il couvre le moteur pixel (format des couleurs,
+  alpha des calques, double contour, particules), l'attribution des thèmes et l'analyse des 7 cartes.
+  Pour chaque thème et chaque carte, il vérifie les règles des planches :
+  - la couche de jeu colle aux collisions : rien hors des tuiles pleines, chaque tuile pleine peinte ;
+  - les tuiles accrochables exposées ont une arête claire, et les tuiles lisses des reflets froids ;
+  - les pointes sont rouges et chaque danger ressort de son sol ;
+  - aucune teinte des joueurs n'apparaît dans le décor, et le décor arrière reste sombre ;
+  - les accessoires restent dans la carte.
+
+  S'y ajoutent le pantin (pieds posés, teintes réservées, deux cordes, écharpe stable à pleine vitesse)
+  et la planche de l'ashigaru.
 - `test/math.test.ts`, `test/no-forbidden-math.test.ts`.
 
 ## Direction artistique (planches)
@@ -344,6 +359,32 @@ proto se noyait dans la forteresse et dans toutes les lanternes. Aucun décor ne
 obliques froids = lisse (`=`), pointe rouge = mortel (`^`), masque blanc = ennemi. Le décor reste dans les
 valeurs sombres ; seuls le perso, les arêtes accrochables et les dangers touchent les extrêmes. Un effet
 ne cache jamais un danger, et ce qui passe devant s'écarte du perso.
+
+**Thèmes** (`src/render/art/themes/`). Chaque niveau des planches est devenu un thème capable d'habiller
+n'importe quelle carte. Il se compose d'un peintre pur (`paint.ts`, testé sous Node), qui cuit les calques à
+partir de l'analyse de la carte (`levelShape.ts` : régions, faces exposées, sol principal, cave, blocs
+flottants, pics, arrivée), et d'un runtime Pixi par vue (`runtime.ts` : fond vivant, parallaxe
+horizontale et verticale, météo).
+
+| Thème | Cartes (auto) | Accrochable | Lisse | Mortel | Fond vivant |
+|---|---|---|---|---|---|
+| **Port d'Umibozu** | Facile, Sprint | bois : pontons, défenses, solives, poutres de cargaison sur poulies | pierre mouillée | pieux dans l'eau noire | orage à double éclair, jonques, mouettes, Umibozu qui suit le perso des yeux et frappe l'eau, mer calculée par pixel |
+| **Forteresse de braise** | Difficile, Horrible, Autoroute | rempart à arêtes chaudes, poutres cerclées et échafaudages pendus à des chaînes | obsidienne à reflets violets | pics de fer sur fosses de lave | volcans et éruptions, oni de basalte, ville et château en feu, flèches enflammées, brume de chaleur (fond seulement) |
+| **Bambouseraie maudite** | Normale, Gouffre | pierre moussue : linteaux, planches liées aux bambous, kasagi | laque noire | épines | étoiles, lune, ryū de jade, cascade, bambous qui ploient, lucioles, hitodama, brume maudite (sous les épines) |
+
+Les caves ont leur propre décor (dessous du ponton, cachot voûté, ruines à arcades). L'arrivée des cartes
+chrono est un torii propre à chaque thème, sous un voile de lumière. Le thème se force dans le panneau
+(DEBUG, section Rendu). La lave et les fosses ne sont peintes que sur les tuiles `^` : un sol sans pics
+reste lisiblement sûr.
+
+**Coût** mesuré en vue 1080p (~960 x 540 px d'art) dans Chrome headless en rendu logiciel, donc majoré :
+pantins et particules ~0,5 ms par frame, runtime du thème de 0,8 ms (forteresse) à 1,4 ms (port,
+bambouseraie), préparation des couches ~0,1 ms. Cuisson d'une carte : 50 à 180 ms, au chargement ou au
+changement de thème. Le panneau affiche ces chronos en direct.
+
+**Ajouter un thème** : un dossier `src/render/art/themes/<id>/` avec `palette.ts`, `paint.ts` et
+`painter.ts` purs (aucun import de Pixi), plus `runtime.ts` et `index.ts`, puis l'inscrire dans
+`painters.ts` et `index.ts`. `test/art.test.ts` le vérifie aussitôt sur les 7 cartes.
 
 **Modes de rendu** (panneau DEBUG, section Rendu, ou **F8**) : **Jeu** ; **Valeurs** (six niveaux de gris :
 le perso doit rester la forme la plus nette) ; **Couche de jeu** (décor coupé, arrivée marquée : ce qui
