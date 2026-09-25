@@ -80,11 +80,35 @@ export const DEFAULT_SETTINGS: Settings = {
   netLastCode: '',
 };
 
+/**
+ * Relais fixé au build : `VITE_NET_URL` (ex. wss://tsj-relais.onrender.com), à renseigner dans les
+ * variables d'environnement de l'hébergeur du jeu (Vercel). Vide en dev et en LAN.
+ */
+function configuredNetUrl(): string {
+  const v: unknown = import.meta.env?.VITE_NET_URL;
+  return typeof v === 'string' ? v.trim() : '';
+}
+
 /** Même hôte que la page, port du relais : marche tel quel en LAN comme en local. */
-function defaultNetUrl(): string {
+function sameHostNetUrl(): string {
   const host = typeof location !== 'undefined' && location.hostname ? location.hostname : 'localhost';
   const proto = typeof location !== 'undefined' && location.protocol === 'https:' ? 'wss' : 'ws';
   return `${proto}://${host}:8787`;
+}
+
+function defaultNetUrl(): string {
+  return configuredNetUrl() || sameHostNetUrl();
+}
+
+/**
+ * Relais enregistré dans le navigateur, ou null pour garder le défaut. L'ancien défaut automatique
+ * (même hôte, port 8787) n'a jamais été un choix du joueur : sur un site déployé il ne mène nulle
+ * part, un relais configuré au build le remplace donc.
+ */
+export function resolveSavedNetUrl(saved: unknown, configured: string, legacyDefault: string): string | null {
+  if (typeof saved !== 'string' || !saved.startsWith('ws')) return null;
+  if (configured && saved === legacyDefault) return null;
+  return saved;
 }
 
 const STORAGE_KEY = 'tsj.settings.v1';
@@ -185,7 +209,8 @@ function mergeSettings(base: Settings, parsed: Partial<Settings>): Settings {
   if (parsed.camera && typeof parsed.camera === 'object') Object.assign(out.camera, pickBooleansAndNumbers(parsed.camera));
   if (typeof parsed.seed === 'number' && Number.isFinite(parsed.seed)) out.seed = parsed.seed >>> 0;
   if (typeof parsed.levelId === 'number') out.levelId = clampLevelId(parsed.levelId);
-  if (typeof parsed.netUrl === 'string' && parsed.netUrl.startsWith('ws')) out.netUrl = parsed.netUrl;
+  const netUrl = resolveSavedNetUrl(parsed.netUrl, configuredNetUrl(), sameHostNetUrl());
+  if (netUrl) out.netUrl = netUrl;
   if (typeof parsed.netLastCode === 'string') out.netLastCode = parsed.netLastCode.slice(0, 6);
   return out;
 }

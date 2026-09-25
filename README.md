@@ -130,11 +130,29 @@ démarre toute seule à 2 joueurs.
 - Côté invité, les sliders et toggles de sim sont **verrouillés** et l'onglet BUILDS refuse
   d'appliquer : c'est l'hôte qui applique, pour les deux. Le panneau affiche le rôle et le tick du
   prochain changement.
-- Changer de serveur : champ **Serveur** de l'écran multijoueur (persisté). Par défaut, même hôte que
-  la page sur le port 8787, donc rien à configurer en LAN.
+- Changer de serveur : champ **Serveur** de l'écran multijoueur (persisté). Par défaut : le relais fixé
+  au build par `VITE_NET_URL` s'il y en a un, sinon le même hôte que la page sur le port 8787 (rien à
+  configurer en LAN).
 
-Ce qui manque pour un vrai jeu en ligne : la reconnexion après coupure, la détection de désync
-(comparaison périodique de hash) et un relais déployé ailleurs que sur ta machine.
+### Sur un site déployé (Vercel)
+
+Le site du jeu ne sert que des fichiers statiques. Vercel ne fait pas tourner le relais, qui doit
+garder des WebSockets ouvertes : il s'héberge **à part**, sur un service qui les accepte.
+
+1. **Render** (offre gratuite) : New → Blueprint → ce dépôt. `render.yaml` crée le service
+   `tsj-relais` (branche `main`, `node server/index.mjs`, contrôle de santé sur `/`). L'adresse du
+   service ouverte dans un navigateur doit afficher « Relais Turbo Samouraï Jetpack : OK ».
+2. **Vercel** : Settings → Environment Variables → `VITE_NET_URL` = `wss://tsj-relais.onrender.com`
+   (l'adresse du service en `wss://`, sans port). Il faut ensuite redéployer : Vite inscrit la valeur
+   dans le build. Les navigateurs qui avaient gardé l'ancien défaut (même hôte, port 8787) basculent
+   d'eux-mêmes sur ce relais.
+
+Le relais gratuit de Render se met en veille après 15 minutes sans connexion. La connexion suivante le
+réveille, en une minute environ : il suffit de réessayer. N'importe quel hébergeur Node qui accepte les
+WebSockets convient aussi (Fly.io, Railway, un VPS). Il fournit `PORT`, que le relais écoute.
+
+Ce qui manque pour un vrai jeu en ligne : la reconnexion après coupure et la détection de désync
+(comparaison périodique de hash).
 
 ## Multijoueur local
 
