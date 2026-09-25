@@ -73,7 +73,7 @@ export const DEFAULT_SETTINGS: Settings = {
   keyboard: cloneKeyboardBindings(DEFAULT_KEYBOARD),
   gamepad: cloneGamepadBindings(DEFAULT_GAMEPAD),
   debug: { showHitboxes: false, showVelocity: false, showTrail: true, trailSeconds: 3, panelOpen: true, panelTab: 'debug' },
-  camera: { zoomMin: 0.3, zoomMax: 1.1, soloZoom: 0.85, splitZoom: 0.8, margin: 260, smoothing: 7 },
+  camera: { zoomMin: 0.3, zoomMax: 0.9, soloZoom: 1.25, splitZoom: 0.8, margin: 260, smoothing: 7 },
   seed: 1234,
   levelId: 0,
   netUrl: defaultNetUrl(),
