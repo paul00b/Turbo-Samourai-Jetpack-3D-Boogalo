@@ -7,7 +7,12 @@
  *
  * Pour jouer à deux machines sur le même réseau : lancer `npm run dev -- --host`, et pointer le
  * champ "Serveur" du menu sur ws://<ip-de-la-machine-hote>:8787.
+ *
+ * En ligne, le relais s'héberge À PART du jeu : Vercel ne sert que les fichiers statiques et ne
+ * garde pas de WebSocket ouverte. Voir render.yaml (Render) et la section « Multijoueur en ligne »
+ * du README. Une requête HTTP sur `/` répond 200 : c'est le contrôle de santé des hébergeurs.
  */
+import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -49,7 +54,17 @@ function leave(ws) {
   else sessions.delete(s.code);
 }
 
-const wss = new WebSocketServer({ port: PORT });
+// HTTP d'abord (contrôle de santé, vérification à la main dans un navigateur), WebSocket par-dessus.
+const http = createServer((req, res) => {
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
+    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(`Relais Turbo Samouraï Jetpack : OK (protocole v${PROTOCOL_VERSION}, ${sessions.size} session(s))\n`);
+    return;
+  }
+  res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+  res.end('Introuvable\n');
+});
+const wss = new WebSocketServer({ server: http });
 
 wss.on('connection', (ws) => {
   ws.session = null;
@@ -126,4 +141,6 @@ const heartbeat = setInterval(() => {
 }, 15000);
 wss.on('close', () => clearInterval(heartbeat));
 
-console.log(`[tsj] relais de sessions sur ws://localhost:${PORT} (protocole v${PROTOCOL_VERSION})`);
+http.listen(PORT, () => {
+  console.log(`[tsj] relais de sessions sur ws://localhost:${PORT} (protocole v${PROTOCOL_VERSION})`);
+});

@@ -1,0 +1,14 @@
+# Blueprint Render : le relais de sessions du multijoueur en ligne (server/index.mjs).
+# Le site du jeu (Vercel) ne peut pas l'héberger : il ne sert que des fichiers statiques et ne garde
+# pas de WebSocket ouverte. Render : New > Blueprint > ce dépôt. Ensuite, côté Vercel, ajouter la
+# variable d'environnement VITE_NET_URL=wss://<nom-du-service>.onrender.com et redéployer.
+services:
+  - type: web
+    name: tsj-relais
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm ci --omit=dev
+    startCommand: node server/index.mjs
+    healthCheckPath: /
+    autoDeploy: true

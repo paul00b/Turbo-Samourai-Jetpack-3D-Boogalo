@@ -19,6 +19,23 @@ export type SessionStatus =
   | 'error'
   | 'closed';
 
+/** Relais censé tourner sur cette machine ou sur le réseau local (dev, LAN) ? */
+export function isLocalRelay(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.replace(/^\[|\]$/g, '');
+  } catch {
+    return false;
+  }
+  return host === 'localhost' || host === '::1' || host.endsWith('.local') || /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+}
+
+/** Message d'échec de connexion : en local on pense au relais éteint, en ligne au relais non hébergé. */
+export function connectionHint(url: string): string {
+  if (isLocalRelay(url)) return `Connexion impossible à ${url}. Le relais tourne-t-il (npm run server) ?`;
+  return `Connexion impossible à ${url}. En ligne, le relais s'héberge à part du jeu (Vercel ne garde pas de WebSocket ouverte) : mets son adresse wss:// dans le champ Serveur, ou dans VITE_NET_URL au build (voir le README). Un relais gratuit en veille peut mettre une minute à se réveiller : réessaie.`;
+}
+
 export interface SessionEvents {
   onStatus?: (status: SessionStatus, session: NetSession) => void;
   onPeer?: (msg: PeerMsg) => void;
@@ -71,7 +88,7 @@ export class NetSession {
     ws.onmessage = (ev) => this.handle(ev.data);
     ws.onerror = () => {
       // onerror ne dit rien d'exploitable dans le navigateur : le message utile est l'URL.
-      if (this.status === 'connecting') this.fail(`Connexion impossible à ${url}. Le relais tourne-t-il (npm run server) ?`);
+      if (this.status === 'connecting') this.fail(connectionHint(url));
     };
     ws.onclose = () => {
       this.stopPing();

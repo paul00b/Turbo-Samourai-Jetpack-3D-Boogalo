@@ -84,6 +84,14 @@ describe('relais de sessions', () => {
     for (const ws of [a, b, c]) ws.close();
   });
 
+  it('répond en HTTP sur / (contrôle de santé des hébergeurs), 404 ailleurs', async () => {
+    const ok = await fetch(`http://127.0.0.1:${PORT}/`);
+    expect(ok.status).toBe(200);
+    expect(await ok.text()).toContain('OK');
+    const missing = await fetch(`http://127.0.0.1:${PORT}/nope`);
+    expect(missing.status).toBe(404);
+  });
+
   it('une version de protocole différente est refusée', async () => {
     const ws = await connect();
     send(ws, { t: 'host', version: PROTOCOL_VERSION + 99 });
