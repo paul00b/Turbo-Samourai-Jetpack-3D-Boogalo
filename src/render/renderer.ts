@@ -1,20 +1,32 @@
 /**
- * Renderer Pixi (WebGL) : 1 ou 2 WorldView (split), caméras, masques, séparateur.
+ * Renderer Pixi (WebGL) : 1 ou 2 vues (split), caméras, masques, séparateur.
+ * Deux rendus au choix (réglage `render.mode`) : le pixel art des planches (ArtView, par défaut)
+ * et le grey-box vectoriel du proto (WorldView). Les aides de debug se posent par-dessus les deux.
  * Implémente WorldPicker pour que la couche IO convertisse la souris en point monde.
  */
 import { Application, Container, Graphics } from 'pixi.js';
-import { TILE_SIZE, type GameState, type Level } from '../sim';
+import { TILE_SIZE, getLevel, type GameState, type Level } from '../sim';
 import type { WorldPicker } from '../io/input/inputMapper';
-import type { CameraMode, CameraSettings, DebugVisuals } from '../io/settings';
+import type { CameraMode, CameraSettings, DebugVisuals, RenderSettings } from '../io/settings';
+import { ArtView } from './art/artView';
+import { ArtWorld } from './art/artWorld';
+import { ART_SCALE } from './art/levelShape';
+import { getTheme, themeIdFor } from './art/themes';
+import type { ThemeId } from './art/themes/types';
 import { Camera, fitZoom, type Viewport } from './camera';
 import type { Fx } from './fx';
 import { interpolatePoses, makePose, type PlayerPose } from './interpolate';
 import type { TrailBuffer } from './trail';
 import { WorldView } from './worldView';
 
+const DEFAULT_RENDER: RenderSettings = { mode: 'art', theme: 'auto', pixelSnap: true };
+
 export class Renderer implements WorldPicker {
   readonly app: Application;
   private readonly views: WorldView[];
+  private readonly overlays: WorldView[];
+  private readonly artViews: ArtView[];
+  readonly artWorld = new ArtWorld();
   private readonly holders: Container[] = [];
   private readonly masks: Graphics[];
   private readonly divider = new Graphics();
@@ -25,6 +37,9 @@ export class Renderer implements WorldPicker {
   private playerCount = 1;
   private camSettings: CameraSettings | null = null;
   private time = 0;
+  private lastNow = -1;
+  /** Thème réellement affiché (après résolution de `auto`). */
+  themeId: ThemeId = 'port';
   /** Durée du dernier app.render() en ms (lissée). */
   renderMs = 0;
 
@@ -32,12 +47,13 @@ export class Renderer implements WorldPicker {
     this.app = app;
     this.level = level;
     this.views = [new WorldView(level), new WorldView(level)];
+    this.overlays = [new WorldView(level, true), new WorldView(level, true)];
+    this.artViews = [new ArtView(), new ArtView()];
     this.masks = [new Graphics(), new Graphics()];
     const stage = app.stage;
     for (let i = 0; i < 2; i++) {
       const holder = new Container();
-      holder.addChild(this.views[i].root);
-      holder.addChild(this.masks[i]);
+      holder.addChild(this.views[i].root, this.artViews[i].display, this.overlays[i].root, this.masks[i]);
       holder.mask = this.masks[i];
       stage.addChild(holder);
       this.holders.push(holder);
@@ -69,11 +85,12 @@ export class Renderer implements WorldPicker {
     return this.app.screen.height;
   }
 
-  /** Change la carte affichée : les tuiles et les libellés sont redessinés une fois. */
+  /** Change la carte affichée : tuiles et libellés redessinés une fois, l'art recuit au prochain rendu. */
   setLevel(level: Level): void {
     if (level === this.level) return;
     this.level = level;
     for (const v of this.views) v.setLevel(level);
+    for (const v of this.overlays) v.setLevel(level);
     this.resetCameras();
   }
 
@@ -107,6 +124,18 @@ export class Renderer implements WorldPicker {
     return true;
   }
 
+  /**
+   * Zoom calé sur un nombre entier de pixels écran par pixel d'art : les pixels restent des carrés
+   * égaux. Réservé aux zooms fixes (solo, split) ; le zoom dynamique à 2 joueurs reste continu.
+   */
+  private snapZoom(zoom: number, render: RenderSettings): number {
+    if (!render.pixelSnap || render.mode === 'greybox') return zoom;
+    const dpr = this.app.renderer.resolution || 1;
+    const devPerArt = zoom * ART_SCALE * dpr;
+    if (devPerArt < 1.5) return zoom;
+    return Math.round(devPerArt) / (ART_SCALE * dpr);
+  }
+
   render(
     prev: GameState,
     curr: GameState,
@@ -117,7 +146,12 @@ export class Renderer implements WorldPicker {
     dbg: DebugVisuals,
     trails: TrailBuffer[],
     fx: Fx,
+    render: RenderSettings = DEFAULT_RENDER,
   ): void {
+    // Temps ambiant : le décor continue de vivre derrière les menus et la pause.
+    const now = performance.now();
+    const ambientDt = this.lastNow < 0 ? 0 : Math.min(0.1, (now - this.lastNow) / 1000);
+    this.lastNow = now;
     this.time += dtReal;
     this.mode = mode;
     this.playerCount = curr.playerCount;
@@ -127,22 +161,32 @@ export class Renderer implements WorldPicker {
     const split = mode === 'split' && curr.playerCount === 2;
     const opts = { showHitboxes: dbg.showHitboxes, showVelocity: dbg.showVelocity, showTrail: dbg.showTrail, time: this.time };
 
+    const art = render.mode !== 'greybox';
+    if (art) {
+      this.themeId = themeIdFor(render.theme, curr.levelId);
+      this.artWorld.setScene(getLevel(curr.levelId), getTheme(this.themeId));
+      this.artWorld.handleEvents(fx.artEvents, curr);
+      this.artWorld.update(curr, this.poses, dtReal, ambientDt);
+    }
+    fx.artEvents.length = 0;
+
     if (split) {
       for (let i = 0; i < 2; i++) {
         const vp = this.viewport(i);
         const c = this.cameras[1 + i];
-        c.follow(this.poses[i].x, this.poses[i].y, cam.splitZoom, dtReal, cam.smoothing, vp, bounds);
-        this.applyView(i, vp, c, curr, opts, trails, fx);
+        c.follow(this.poses[i].x, this.poses[i].y, this.snapZoom(cam.splitZoom, render), dtReal, cam.smoothing, vp, bounds);
+        this.applyView(i, vp, c, curr, opts, trails, fx, render, ambientDt);
       }
       this.divider.clear();
       const half = Math.floor(this.width / 2);
-      this.divider.rect(half - 1, 0, 2, this.height).fill(0xdde3ea);
+      this.divider.rect(half - 1, 0, 2, this.height).fill(0x06060b);
+      this.divider.rect(half, 0, 1, this.height).fill(0x262c3d);
       this.divider.visible = true;
     } else {
       const vp = this.viewport(0);
       let tx = this.poses[0].x;
       let ty = this.poses[0].y;
-      let zoom = cam.soloZoom;
+      let zoom = this.snapZoom(cam.soloZoom, render);
       if (curr.playerCount === 2) {
         const p0 = this.poses[0];
         const p1 = this.poses[1];
@@ -151,8 +195,9 @@ export class Renderer implements WorldPicker {
         zoom = fitZoom(Math.abs(p0.x - p1.x), Math.abs(p0.y - p1.y), vp, cam.margin, cam.zoomMin, cam.zoomMax);
       }
       const c = this.cameras[0];
+      if (render.mode !== 'greybox') zoom = Math.max(zoom, ArtView.minZoom(vp));
       c.follow(tx, ty, zoom, dtReal, cam.smoothing, vp, bounds);
-      this.applyView(0, vp, c, curr, opts, trails, fx);
+      this.applyView(0, vp, c, curr, opts, trails, fx, render, ambientDt);
       this.holders[1].visible = false;
       this.divider.visible = false;
     }
@@ -169,14 +214,38 @@ export class Renderer implements WorldPicker {
     opts: { showHitboxes: boolean; showVelocity: boolean; showTrail: boolean; time: number },
     trails: TrailBuffer[],
     fx: Fx,
+    render: RenderSettings,
+    ambientDt: number,
   ): void {
-    const view = this.views[i];
     this.holders[i].visible = true;
     const m = this.masks[i];
     m.clear();
     m.rect(vp.x, vp.y, vp.w, vp.h).fill(0xffffff);
-    view.setCamera(c.x, c.y, c.zoom, vp.x, vp.y, vp.w, vp.h);
-    view.draw(state, this.poses, opts, trails, fx, c.zoom);
+    const art = render.mode !== 'greybox';
+    const grey = this.views[i];
+    const overlay = this.overlays[i];
+    const pixel = this.artViews[i];
+    grey.root.visible = !art;
+    pixel.display.visible = art;
+    overlay.root.visible = art;
+    if (art) {
+      pixel.render(
+        this.app.renderer,
+        this.artWorld,
+        c,
+        vp,
+        state,
+        this.poses,
+        trails,
+        { mode: render.mode === 'values' ? 'values' : render.mode === 'play' ? 'play' : 'art', showTrail: opts.showTrail, time: opts.time },
+        ambientDt,
+      );
+      overlay.setCamera(c.x, c.y, c.zoom, vp.x, vp.y, vp.w, vp.h);
+      overlay.draw(state, this.poses, opts, trails, fx, c.zoom);
+    } else {
+      grey.setCamera(c.x, c.y, c.zoom, vp.x, vp.y, vp.w, vp.h);
+      grey.draw(state, this.poses, opts, trails, fx, c.zoom);
+    }
   }
 
   /** Zoom courant de la caméra du joueur (HUD). */

@@ -335,7 +335,7 @@ export class Game {
     const dt = this.loop.dtReal;
     this.fx.update(dt);
     const s = this.deps.settings.get();
-    this.deps.renderer.render(this.prev, this.state, this.loop.alpha, dt, s.cameraMode, s.camera, s.debug, this.trails, this.fx);
+    this.deps.renderer.render(this.prev, this.state, this.loop.alpha, dt, s.cameraMode, s.camera, s.debug, this.trails, this.fx, s.render);
     this.deps.sfx.update(this.state, dt);
   }
 

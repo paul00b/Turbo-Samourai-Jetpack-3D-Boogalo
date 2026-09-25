@@ -40,6 +40,27 @@ export interface CameraSettings {
   smoothing: number;
 }
 
+/**
+ * Rendu (direction artistique des planches) :
+ *  - `art` : pixel art, toutes couches ;
+ *  - `values` : six niveaux de gris, le perso doit rester la forme la plus nette ;
+ *  - `play` : décor coupé, il ne reste que ce qui compte pour jouer ;
+ *  - `greybox` : l'ancien rendu vectoriel du proto, pour comparer.
+ */
+export type RenderMode = 'art' | 'values' | 'play' | 'greybox';
+export type ThemeChoice = 'auto' | 'port' | 'forge' | 'bamboo';
+
+export const RENDER_MODES: readonly RenderMode[] = ['art', 'values', 'play', 'greybox'];
+export const THEME_CHOICES: readonly ThemeChoice[] = ['auto', 'port', 'forge', 'bamboo'];
+
+export interface RenderSettings {
+  mode: RenderMode;
+  /** Thème du décor ; `auto` = celui de la carte. */
+  theme: ThemeChoice;
+  /** Cale le zoom solo/split sur un nombre entier de pixels écran par pixel d'art (pixels nets). */
+  pixelSnap: boolean;
+}
+
 export interface Settings {
   masterVolume: number;
   sfxVolume: number;
@@ -51,6 +72,7 @@ export interface Settings {
   gamepad: GamepadBindings;
   debug: DebugVisuals;
   camera: CameraSettings;
+  render: RenderSettings;
   seed: number;
   /** Carte sélectionnée (index dans LEVELS, 0 = facile). */
   levelId: number;
@@ -73,7 +95,9 @@ export const DEFAULT_SETTINGS: Settings = {
   keyboard: cloneKeyboardBindings(DEFAULT_KEYBOARD),
   gamepad: cloneGamepadBindings(DEFAULT_GAMEPAD),
   debug: { showHitboxes: false, showVelocity: false, showTrail: true, trailSeconds: 3, panelOpen: true, panelTab: 'debug' },
-  camera: { zoomMin: 0.3, zoomMax: 1.1, soloZoom: 0.85, splitZoom: 0.8, margin: 260, smoothing: 7 },
+  // Zoom solo 1 : un pixel d'art = deux pixels écran, la densité des planches (cf. design/planches).
+  camera: { zoomMin: 0.3, zoomMax: 1.1, soloZoom: 1, splitZoom: 0.8, margin: 260, smoothing: 7 },
+  render: { mode: 'art', theme: 'auto', pixelSnap: true },
   seed: 1234,
   levelId: 0,
   netUrl: defaultNetUrl(),
@@ -183,6 +207,12 @@ function mergeSettings(base: Settings, parsed: Partial<Settings>): Settings {
     if (typeof tab === 'string') out.debug.panelTab = tab;
   }
   if (parsed.camera && typeof parsed.camera === 'object') Object.assign(out.camera, pickBooleansAndNumbers(parsed.camera));
+  if (parsed.render && typeof parsed.render === 'object') {
+    const r = parsed.render as Partial<Record<keyof RenderSettings, unknown>>;
+    if (RENDER_MODES.includes(r.mode as RenderMode)) out.render.mode = r.mode as RenderMode;
+    if (THEME_CHOICES.includes(r.theme as ThemeChoice)) out.render.theme = r.theme as ThemeChoice;
+    if (typeof r.pixelSnap === 'boolean') out.render.pixelSnap = r.pixelSnap;
+  }
   if (typeof parsed.seed === 'number' && Number.isFinite(parsed.seed)) out.seed = parsed.seed >>> 0;
   if (typeof parsed.levelId === 'number') out.levelId = clampLevelId(parsed.levelId);
   if (typeof parsed.netUrl === 'string' && parsed.netUrl.startsWith('ws')) out.netUrl = parsed.netUrl;

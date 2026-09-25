@@ -1,5 +1,6 @@
 /** Particules cosmétiques (rendu uniquement : Math.random autorisé ici). */
 import type { SimEvent } from '../sim';
+import { PLAYER_HEX } from './art/palette';
 
 export interface Particle {
   x: number;
@@ -12,10 +13,16 @@ export interface Particle {
   color: number;
 }
 
-export const PLAYER_COLORS = [0x4fd1ff, 0xffab4f];
+/** Teinte réservée de chaque joueur (cyan J1, rose J2) : cf. art/palette.ts. */
+export const PLAYER_COLORS: readonly number[] = PLAYER_HEX;
+
+/** Au-delà, les événements non consommés par le rendu pixel sont jetés (rendu absent, tests). */
+const ART_EVENTS_CAP = 512;
 
 export class Fx {
   readonly particles: Particle[] = [];
+  /** Événements des ticks joués pour la première fois, en attente du rendu pixel (drainés à chaque frame). */
+  readonly artEvents: SimEvent[] = [];
 
   burst(x: number, y: number, n: number, speed: number, color: number, life = 0.6, size = 3): void {
     for (let i = 0; i < n; i++) {
@@ -36,6 +43,7 @@ export class Fx {
 
   handleEvents(events: readonly SimEvent[]): void {
     for (const e of events) {
+      if (this.artEvents.length < ART_EVENTS_CAP) this.artEvents.push(e);
       switch (e.type) {
         case 'death':
           this.burst(e.x, e.y, 28, 520, PLAYER_COLORS[e.player] ?? 0xffffff, 0.7, 4);
@@ -81,5 +89,6 @@ export class Fx {
 
   clear(): void {
     this.particles.length = 0;
+    this.artEvents.length = 0;
   }
 }
