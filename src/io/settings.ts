@@ -95,8 +95,8 @@ export const DEFAULT_SETTINGS: Settings = {
   keyboard: cloneKeyboardBindings(DEFAULT_KEYBOARD),
   gamepad: cloneGamepadBindings(DEFAULT_GAMEPAD),
   debug: { showHitboxes: false, showVelocity: false, showTrail: true, trailSeconds: 3, panelOpen: true, panelTab: 'debug' },
-  // Zoom solo 1 : un pixel d'art = deux pixels écran, la densité des planches (cf. design/planches).
-  camera: { zoomMin: 0.3, zoomMax: 1.1, soloZoom: 1, splitZoom: 0.8, margin: 260, smoothing: 7 },
+  // Zoom solo 1,25 : 2,5 px écran par px d'art, ramené à un nombre entier par « Pixels entiers ».
+  camera: { zoomMin: 0.3, zoomMax: 0.9, soloZoom: 1.25, splitZoom: 0.8, margin: 260, smoothing: 7 },
   render: { mode: 'art', theme: 'auto', pixelSnap: true },
   seed: 1234,
   levelId: 0,

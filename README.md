@@ -33,7 +33,8 @@ src/app      Orchestration : Game (le seul endroit où les couches se touchent) 
   chacun `constraintIterations` passes Gauss-Seidel sur les cordes (PBD, contrainte d'inégalité : la corde
   retient, ne pousse jamais). Vitesse dérivée des positions, collisions cercle/tuiles avec mort au-dessus
   du seuil, pics, ennemis, respawn instantané dans le même tick.
-- **Mort au mur** : seuil à 1800 px/s sur la composante normale à l'impact (chute libre de ~28 tuiles).
+- **Mort au mur** : seuil à 2510 px/s sur la composante normale à l'impact (chute libre de ~55 tuiles),
+  juste sous la vitesse max de 2600 px/s : seuls les impacts presque à fond tuent.
   En dessous, on rebondit. Les pics tuent quelle que soit la vitesse, d'où leur cantonnement à la cave.
 - **Grappin** : par défaut on reste accroché tant que le bouton est maintenu, la corde se rétracte
   automatiquement pendant ce maintien, et relâcher lâche (`holdToAttach`). La touche reel dédiée reste
@@ -67,7 +68,7 @@ src/app      Orchestration : Game (le seul endroit où les couches se touchent) 
 5. Aucune valeur ne dépend du deltaTime réel : le loop ne fait qu'appeler `step` N fois.
 
 Vérification cross-navigateur : bouton **Auto-test 1000 ticks** du panneau de debug. Il rejoue un
-scénario scripté et affiche un hash. Le hash de référence est `4a8ef524` (test `empreinte de référence`,
+scénario scripté et affiche un hash. Le hash de référence est `b18deb64` (test `empreinte de référence`,
 identique sous Node/V8 et dans Chromium). Lance-le dans Firefox et Safari : il doit être identique. Si tu
 modifies la physique, mets à jour `GOLDEN_HASH` dans `test/determinism.test.ts` dans le même commit.
 
@@ -330,9 +331,11 @@ l'identique de `design/planches/engine.js` et `kit.js`. Aucun fichier image.
   les planches, puis `PixelQuad` agrandit l'image à l'écran en « sharp bilinear » : chaque pixel d'art
   reste un bloc net, seuls ses bords sont lissés sur un pixel écran. Le reste sous-pixel de la caméra est
   passé au quad : le défilement reste fluide. Le mode Valeurs est appliqué dans ce même shader.
-- Zoom solo par défaut à 1 (2 px écran par px d'art). L'option **Pixels entiers** cale les zooms fixes
-  (solo, split) sur un nombre entier de pixels écran par pixel d'art, y compris sur les écrans à 125 ou
-  150 %. Le zoom dynamique à deux joueurs reste continu, le « sharp bilinear » évite le scintillement.
+- Zoom solo par défaut à 1,25 (2,5 px écran par px d'art). L'option **Pixels entiers** cale les zooms
+  fixes (solo, split) sur le nombre entier de pixels écran par pixel d'art le plus proche. Pour le zoom
+  solo, cela donne 3 px sur un écran à 100 % (zoom effectif 1,5), 3 px à 125 % (1,2), 4 px à 150 %
+  (1,33) et 5 px à 200 % (1,25). Le zoom dynamique à deux joueurs reste continu (au plus 0,9), et le
+  « sharp bilinear » évite le scintillement.
 - `ArtWorld`, partagé entre les vues : cuisson de la carte par le peintre du thème en quatre calques
   découpés en tuiles de texture de 512 px (décor arrière, tuiles de jeu, dangers, décor avant), pantins,
   particules, planche de sprites de l'ashigaru. `ArtView`, une par viewport : couches, parallaxe,

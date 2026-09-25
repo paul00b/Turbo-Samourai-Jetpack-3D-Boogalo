@@ -150,6 +150,8 @@ describe('physique de base', () => {
     s.params.gravity = 0;
     const p = s.players[0];
     p.y -= 200;
+    // Vitesse max relevée : on teste le seuil de mort, pas le plafond de vitesse (2600, tout près du seuil).
+    s.params.maxSpeed = DEFAULT_PARAMS.wallDeathSpeed * 2;
     p.vx = -DEFAULT_PARAMS.wallDeathSpeed * 1.5; // vers le mur gauche
     const ev = run(s, [makeInput()], 60);
     const death = ev.find((e) => e.type === 'death');
