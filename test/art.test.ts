@@ -308,6 +308,31 @@ describe('le samouraï', () => {
     }
   });
 
+  it('écharpe stable à pleine vitesse : elle traîne derrière sans s\'étirer ni diverger', () => {
+    const hero = new HeroPuppet(0);
+    const inp = makeHeroInput();
+    const parts = new Particles();
+    // 2600 px monde/s (vitesse max du jeu) = 1300 px d'art/s, en zigzag, à 60 puis 30 fps.
+    for (let i = 0; i < 180; i++) {
+      const dt = i < 120 ? 1 / 60 : 1 / 30;
+      inp.vx = 1300 * Math.cos(i / 20);
+      inp.vy = 900 * Math.sin(i / 13);
+      inp.x += inp.vx * dt;
+      inp.y += inp.vy * dt;
+      inp.jet = i % 40 < 20;
+      hero.update(dt, inp, 30, parts);
+    }
+    const sc = (hero as unknown as { scarf: { x: number; y: number }[] }).scarf;
+    let len = 0;
+    for (let i = 1; i < sc.length; i++) {
+      expect(Number.isFinite(sc[i].x) && Number.isFinite(sc[i].y)).toBe(true);
+      len += Math.hypot(sc[i].x - sc[i - 1].x, sc[i].y - sc[i - 1].y);
+    }
+    // Repos : 10 segments de 1,9 px. On tolère l'étirement des contraintes, pas l'explosion.
+    expect(len).toBeLessThan(10 * 1.9 * 1.6);
+    expect(Math.hypot(sc[0].x - inp.x, sc[0].y - inp.y)).toBeLessThan(12);
+  });
+
   it('accroché à deux ancres, chaque main tient sa corde', () => {
     const hero = new HeroPuppet(0);
     const inp = makeHeroInput();

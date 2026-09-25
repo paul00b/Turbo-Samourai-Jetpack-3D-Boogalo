@@ -184,8 +184,9 @@ export class ArtView {
 
     const heroesArt: { x: number; y: number }[] = [];
     for (let i = 0; i < state.playerCount; i++) heroesArt.push({ x: poses[i].x / ART_SCALE, y: poses[i].y / ART_SCALE });
-    // Parallaxe verticale : référence = la vue centrée sur le spawn.
-    const homeY = Math.max(0, Math.min(Math.max(0, shape.ph - viewH), shape.level.spawnY / ART_SCALE - viewH / 2));
+    // Parallaxe verticale : référence = la vue centrée sur le spawn, bornée comme la caméra
+    // (centrée sur la carte quand la vue est plus haute qu'elle).
+    const homeY = viewH >= shape.ph ? (shape.ph - viewH) / 2 : Math.max(0, Math.min(shape.ph - viewH, shape.level.spawnY / ART_SCALE - viewH / 2));
     const frame: ThemeFrame = {
       t: world.ambient,
       dt: ambientDt,
