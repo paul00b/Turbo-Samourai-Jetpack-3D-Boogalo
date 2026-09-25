@@ -147,9 +147,12 @@ garder des WebSockets ouvertes : il s'héberge **à part**, sur un service qui l
    `tsj-relais` (branche `main`, `node server/index.mjs`, contrôle de santé sur `/`). L'adresse du
    service ouverte dans un navigateur doit afficher « Relais Turbo Samouraï Jetpack : OK ».
 2. **Vercel** : Settings → Environment Variables → `VITE_NET_URL` = `wss://tsj-relais.onrender.com`
-   (l'adresse du service en `wss://`, sans port). Il faut ensuite redéployer : Vite inscrit la valeur
-   dans le build. Les navigateurs qui avaient gardé l'ancien défaut (même hôte, port 8787) basculent
-   d'eux-mêmes sur ce relais.
+   (l'adresse du service, sans port). Le nom compte : Vite ne transmet au jeu que les variables en
+   `VITE_`. Un copier-coller en `https://`, avec ou sans `/` final, est converti en `wss://`. Il faut
+   ensuite redéployer : Vite inscrit la valeur dans le build. Les navigateurs suivent le relais du
+   build (ancien défaut « même hôte, port 8787 » ou adresse mal saisie puis corrigée) ; seule une
+   adresse tapée à la main dans le champ **Serveur** est gardée. Vider ce champ revient au relais du
+   build.
 
 Le relais gratuit de Render se met en veille après 15 minutes sans connexion. La connexion suivante le
 réveille, en une minute environ : il suffit de réessayer. N'importe quel hébergeur Node qui accepte les

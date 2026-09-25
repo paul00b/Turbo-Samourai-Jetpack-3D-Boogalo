@@ -18,7 +18,8 @@ import { DT, LEVEL_INFOS, LEVEL_MODE_LABEL, type LevelMode } from '../sim';
 import type { NetGame } from '../net/netGame';
 import { normalizeCode } from '../net/protocol';
 import type { KeyboardMouse } from '../io/input/keyboardMouse';
-import type { SettingsStore } from '../io/settings';
+import { defaultNetUrl, normalizeRelayUrl, type SettingsStore } from '../io/settings';
+import { isLocalRelay } from '../net/session';
 import { clear, h } from './dom';
 import { formatTime } from './hud';
 import { FocusNav, MenuInput, type MenuAction } from './focusNav';
@@ -343,7 +344,16 @@ export class Menu {
     const s = this.deps.settings.get();
     const net = this.deps.net;
     const url = h('input', { type: 'text', class: 'menu-input', value: s.netUrl, spellcheck: 'false', 'data-nav': true }) as HTMLInputElement;
-    url.addEventListener('change', () => this.deps.settings.update((st) => (st.netUrl = url.value.trim())));
+    // Champ vidé ou égal au défaut : on revient au relais du build (et on suit ses corrections).
+    url.addEventListener('change', () => {
+      const v = normalizeRelayUrl(url.value);
+      const def = defaultNetUrl();
+      this.deps.settings.update((st) => {
+        st.netUrl = v || def;
+        st.netUrlCustom = v !== '' && v !== def;
+      });
+      url.value = this.deps.settings.get().netUrl;
+    });
 
     const code = h('input', {
       type: 'text',
@@ -366,7 +376,9 @@ export class Menu {
     if (net.status === 'connected') lines.push('Les deux joueurs sont connectés.');
     if (net.status === 'error') lines.push(net.session.error);
     if (net.message) lines.push(net.message);
-    if (lines.length === 0) lines.push('Lance le relais avec « npm run server », puis héberge ou rejoins avec un code.');
+    if (lines.length === 0) {
+      lines.push(isLocalRelay(s.netUrl) ? 'Lance le relais avec « npm run server », puis héberge ou rejoins avec un code.' : 'Héberge une session, ou rejoins-en une avec le code de ton ami.');
+    }
     for (const l of lines) status.append(h('div', { text: l }));
 
     const codeBanner = net.code && net.status === 'waiting' ? h('div', { class: 'net-code', text: net.code }) : null;
