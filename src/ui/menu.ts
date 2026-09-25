@@ -192,6 +192,7 @@ export class Menu {
     return h(
       'div',
       { class: 'menu-screen' },
+      h('p', { class: 'menu-eyebrow', text: 'PROTOTYPE · DIRECTION ARTISTIQUE V1' }),
       h('h1', { class: 'game-title' }, 'TURBO-SAMOURAÏ', h('br'), 'JETPACK 3D BOOGALOO'),
       h('p', { class: 'menu-sub', text: 'Prototype V1 · test de feel · deux grappins, un jetpack, des tongs' }),
       this.panel(

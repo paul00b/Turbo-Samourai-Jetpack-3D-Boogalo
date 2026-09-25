@@ -74,6 +74,8 @@ export class ArtView {
   camX = 0;
   camY = 0;
   scale = 1;
+  /** Chronos de la dernière frame (ms) : runtime du thème, reste de la préparation, rendu Pixi dans la RT. */
+  readonly stats = { theme: 0, prep: 0, pixi: 0 };
 
   /** Zoom en dessous duquel la vue dépasserait la taille max d'une texture. */
   static minZoom(vp: Viewport): number {
@@ -196,7 +198,10 @@ export class ArtView {
       heroes: heroesArt,
       mode: opts.mode,
     };
+    const tTheme = performance.now();
     if (!play) rt.update(frame);
+    const tPrep = performance.now();
+    this.stats.theme = tPrep - tTheme;
 
     this.cullChunks(L0, T0, usedW, usedH);
     if (!play) this.updateProps(world, L0, T0, usedW, usedH);
@@ -207,12 +212,15 @@ export class ArtView {
     this.drawParticles(world.parts, L0, T0, usedW, usedH);
     this.drawOverlay(state, poses, opts);
 
+    const tPixi = performance.now();
+    this.stats.prep = tPixi - tPrep;
     pixi.render({
       container: this.root,
       target: this.rt,
       clear: true,
       clearColor: play ? theme.painter.flat : 0x000000,
     });
+    this.stats.pixi = performance.now() - tPixi;
     this.quad.set(this.rt, this.rtW, this.rtH, usedW, usedH, vp.x - fx * s, vp.y - fy * s, s, opts.mode === 'values');
   }
 

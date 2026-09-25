@@ -46,7 +46,7 @@ function deckTrim(b: Buf, s: SolidTile): void {
     b.px(x, y + 6, WOOD.dark);
     if (x % 11 === 5) {
       for (let j = 2; j < 6; j++) b.px(x, y + j, WOOD.seam);
-      if (hash2(x, y, 3) > 0.6) b.px(x + 4, y + 3 + ((x * 7) % 3), WOOD.knot);
+      if (hash2(x, y, 3) > 0.6 && x + 4 < s.X + T) b.px(x + 4, y + 3 + ((x * 7) % 3), WOOD.knot);
     }
   }
   // Bouts de planches aux extrémités (trou, bord de quai).
@@ -91,7 +91,7 @@ function quayTile(b: Buf, s: SolidTile): void {
   for (let x = s.X; x < s.X + T; x++) {
     if (hash2(x, 0, 41) > 0.93) {
       const len = 3 + Math.floor(hash2(x, 1, 41) * 8);
-      for (let j = 0; j < len; j++) if (hash2(x, s.Y + j, 42) > 0.25) b.px(x, s.Y + 7 + j, K.quayWet);
+      for (let j = 0; j < len && 7 + j < T; j++) if (hash2(x, s.Y + j, 42) > 0.25) b.px(x, s.Y + 7 + j, K.quayWet);
     }
   }
   if (s.faces & FACE_LEFT) fenderTrim(b, s, false);

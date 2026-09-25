@@ -42,6 +42,16 @@ export class Renderer implements WorldPicker {
   themeId: ThemeId = 'port';
   /** Durée du dernier app.render() en ms (lissée). */
   renderMs = 0;
+  /** Préparation CPU de la frame (pantins, décor animé, cuisson exclue), ms lissées. */
+  prepMs = 0;
+  /** Pantins et particules (dernière frame, ms). */
+  worldMs = 0;
+
+  /** Chronos détaillés du rendu pixel (dernière frame), pour le profilage. */
+  artStats(): { world: number; theme: number; prep: number; pixi: number } {
+    const v = this.artViews[0].stats;
+    return { world: this.worldMs, theme: v.theme, prep: v.prep, pixi: v.pixi };
+  }
 
   private constructor(app: Application, level: Level) {
     this.app = app;
@@ -150,6 +160,7 @@ export class Renderer implements WorldPicker {
   ): void {
     // Temps ambiant : le décor continue de vivre derrière les menus et la pause.
     const now = performance.now();
+    const bakesBefore = this.artWorld.version;
     const ambientDt = this.lastNow < 0 ? 0 : Math.min(0.1, (now - this.lastNow) / 1000);
     this.lastNow = now;
     this.time += dtReal;
@@ -166,7 +177,9 @@ export class Renderer implements WorldPicker {
       this.themeId = themeIdFor(render.theme, curr.levelId);
       this.artWorld.setScene(getLevel(curr.levelId), getTheme(this.themeId));
       this.artWorld.handleEvents(fx.artEvents, curr);
+      const tw = performance.now();
       this.artWorld.update(curr, this.poses, dtReal, ambientDt);
+      this.worldMs = performance.now() - tw;
     }
     fx.artEvents.length = 0;
 
@@ -202,6 +215,8 @@ export class Renderer implements WorldPicker {
       this.divider.visible = false;
     }
     const t0 = performance.now();
+    // Une frame de cuisson (changement de carte ou de thème) fausserait la moyenne : on l'écarte.
+    if (this.artWorld.version === bakesBefore) this.prepMs += (t0 - now - this.prepMs) * 0.1;
     this.app.render();
     this.renderMs += (performance.now() - t0 - this.renderMs) * 0.1;
   }

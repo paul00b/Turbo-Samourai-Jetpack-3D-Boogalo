@@ -5,7 +5,7 @@
  * s'écarte du perso, éclaboussures sur les pontons, gouttes sous les poutres.
  * L'éclair n'éclaire que le décor : rien ne clignote sous le joueur.
  */
-import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { Container, Graphics, Sprite, TilingSprite, type Texture } from 'pixi.js';
 import { T_SOLID } from '../../../../sim';
 import { Buf, C, fbm, fsin, hash2, Particles, type Color } from '../../../pixel/engine';
 import { clouds, rimTop } from '../../../pixel/kit';
@@ -31,6 +31,25 @@ interface Statics {
   farF: Texture;
   boatGlow: Texture;
   eyeGlow: Texture;
+  /** Deux motifs de pluie lointaine qui se répètent (256 px), à des vitesses différentes. */
+  rainA: Texture;
+  rainB: Texture;
+}
+
+/** Motif de pluie périodique : des gouttes de 3 px inclinées comme KIT.rain, raccordées sur les bords. */
+function rainTile(seed: number, drops: number, color: Color): Buf {
+  const S = 256;
+  const b = new Buf(S, S);
+  for (let i = 0; i < drops; i++) {
+    const x = Math.floor(hash2(i, 1, seed) * S);
+    const y = Math.floor(hash2(i, 2, seed) * S);
+    for (let k = 0; k < 3; k++) {
+      const px = (((Math.round(x - k * 0.35) % S) + S) % S);
+      const py = (((y - k) % S) + S) % S;
+      b.d[py * S + px] = color;
+    }
+  }
+  return b;
 }
 
 let statics: Statics | null = null;
@@ -93,6 +112,8 @@ function getStatics(): Statics {
     farF: textureFromBuf(farLayer(K.farF, K.farFRim), 'port-farF'),
     boatGlow: glowTexture(6, K.lantern.glow, 0.4, 'port-boat-glow'),
     eyeGlow: glowTexture(16, K.eyeGlow, 0.32, 'port-eye-glow'),
+    rainA: textureFromBuf(rainTile(1, 26, K.rainFar), 'port-rain-a'),
+    rainB: textureFromBuf(rainTile(3, 26, K.rainFar), 'port-rain-b'),
   };
   return statics;
 }
@@ -129,9 +150,22 @@ class Umibozu {
   readonly canvas = new CpuSprite(UW, UH, 'umibozu');
   private readonly fx = new Particles();
   private lastSlam = -1;
+  private lastDraw = -1;
+  private lastFlash = false;
+  private acc = 0;
 
   /** (hx, hy) : centre du corps à l'écran ; heroX : perso le plus proche, à l'écran. */
   draw(t: number, dt: number, hx: number, hy: number, flash: boolean, heroX: number): void {
+    this.acc += dt;
+    // Redessin à 30 Hz au plus (mouvement lent), immédiat au changement d'éclair.
+    if (this.lastDraw >= 0 && this.acc < 1 / 30 && flash === this.lastFlash && Math.abs(t - this.lastDraw) < 0.5) {
+      this.canvas.sprite.position.set(Math.round(hx - UCX), Math.round(hy - UCY));
+      return;
+    }
+    const step = this.acc;
+    this.acc = 0;
+    this.lastDraw = t;
+    this.lastFlash = flash;
     const buf = this.canvas.buf;
     buf.clear();
     const body = flash ? K.uF : K.uBody;
@@ -199,7 +233,7 @@ class Umibozu {
         buf.rect(ex + look - 0.5, ey - 3, 2, 7, K.uBody);
       }
     }
-    this.fx.update(dt);
+    this.fx.update(step);
     this.fx.draw(buf);
     this.canvas.commit(hx - UCX, hy - UCY);
   }
@@ -218,6 +252,8 @@ export function createPortRuntime(): ThemeRuntime {
   const cloudNear = new WrapStrip(S.cloudNear);
   const far = new WrapStrip(S.far);
   const ambient = new PixelBatch();
+  const rainFarA = new TilingSprite({ texture: S.rainA, width: 16, height: 16 });
+  const rainFarB = new TilingSprite({ texture: S.rainB, width: 16, height: 16 });
   const glows = new Container();
   const glowSprites: Sprite[] = [];
   const umi = new Umibozu();
@@ -234,7 +270,7 @@ export function createPortRuntime(): ThemeRuntime {
     'port-sea',
   );
   const foam = new PixelBatch();
-  back.addChild(skyTop, sky.view, cloudFar.view, bolt.g, cloudNear.view, far.view, ambient.g, glows, umi.canvas.sprite, sea.mesh, foam.g);
+  back.addChild(skyTop, sky.view, cloudFar.view, bolt.g, cloudNear.view, far.view, ambient.g, glows, rainFarA, rainFarB, umi.canvas.sprite, sea.mesh, foam.g);
 
   const rain = new PixelBatch();
   front.addChild(rain.g);
@@ -318,7 +354,12 @@ export function createPortRuntime(): ThemeRuntime {
       }
       for (let i = gi; i < glowSprites.length; i++) glowSprites[i].visible = false;
       const area = (viewW * viewH) / (640 * 360);
-      drawRain(ambient, t, Math.round(240 * area), 3, 180, K.rainFar, 1, camX * 0.5, camY * 0.5, viewW, viewH, null);
+      // Pluie lointaine : deux motifs périodiques qui défilent (vitesses 165 et 205 px/s, pente 0,35).
+      for (const [layer, v] of [[rainFarA, 165], [rainFarB, 205]] as const) {
+        layer.width = viewW;
+        layer.height = viewH;
+        layer.tilePosition.set(Math.round(-t * v * 0.35 - camX * 0.5), Math.round(t * v - camY * 0.5));
+      }
       ambient.flush();
 
       // Umibozu : une apparition tous les 1400 px de parallaxe, celle qui est la plus proche.

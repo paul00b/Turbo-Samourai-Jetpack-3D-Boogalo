@@ -3,7 +3,7 @@
  * À remplacer par palette.ts / paint.ts / runtime.ts sur le modèle de themes/port.
  */
 import type { ThemeModule } from '../runtime';
-import { portPainter } from '../port';
+import { portPainter } from '../port/painter';
 import { createPortRuntime } from '../port/runtime';
 
 export const forgeTheme: ThemeModule = {

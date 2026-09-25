@@ -18,6 +18,12 @@ interface PlayerBlock {
   device: HTMLElement;
 }
 
+/** Nom du niveau affiché en haut du HUD (planches : en or, à droite). */
+export interface StageLabel {
+  name: string;
+  sub: string;
+}
+
 export class Hud {
   private blocks: PlayerBlock[] = [];
   private readonly stats: HTMLElement;
@@ -26,6 +32,10 @@ export class Hud {
   private readonly complete: HTMLElement;
   private readonly message: HTMLElement;
   private readonly crosshair: HTMLElement;
+  private readonly stage: HTMLElement;
+  private readonly stageName: HTMLElement;
+  private readonly stageSub: HTMLElement;
+  private readonly modeLabel: HTMLElement;
   private lastTextUpdate = 0;
   private bannerAllowed = true;
 
@@ -36,8 +46,12 @@ export class Hud {
     this.complete = h('div', { class: 'hud-complete hidden' });
     this.stats = h('div', { class: 'hud-stats', text: '' });
     this.message = h('div', { class: 'hud-message hidden' });
-    this.crosshair = h('div', { class: 'crosshair hidden' });
-    root.append(this.globalChrono, this.objective, this.complete, this.stats, this.message, this.crosshair);
+    this.crosshair = h('div', { class: 'crosshair hidden' }, h('i'), h('i'), h('i'), h('i'), h('b'));
+    this.stageName = h('span', { class: 'hud-stage-name', text: '' });
+    this.stageSub = h('span', { class: 'hud-stage-sub', text: '' });
+    this.stage = h('div', { class: 'hud-stage' }, this.stageName, this.stageSub);
+    this.modeLabel = h('div', { class: 'hud-mode hidden', text: '' });
+    root.append(this.globalChrono, this.objective, this.complete, this.stats, this.message, this.stage, this.modeLabel, this.crosshair);
     for (let i = 0; i < 2; i++) {
       const speed = h('div', { class: 'hud-speed', text: '0' });
       const heatFill = h('div', { class: 'hud-heat-fill' });
@@ -78,10 +92,22 @@ export class Hud {
     settings: Settings,
     mouse: { x: number; y: number; visible: boolean },
     renderMs = 0,
+    stage: StageLabel | null = null,
+    modeText = '',
   ): void {
     const now = performance.now();
     const textTick = now - this.lastTextUpdate > 50; // 20 Hz pour le texte, la barre de chauffe chaque frame
     if (textTick) this.lastTextUpdate = now;
+    this.root.classList.toggle('two-players', state.playerCount === 2);
+    if (textTick) {
+      this.stage.classList.toggle('hidden', !stage);
+      if (stage) {
+        if (this.stageName.textContent !== stage.name) this.stageName.textContent = stage.name;
+        if (this.stageSub.textContent !== stage.sub) this.stageSub.textContent = stage.sub;
+      }
+      this.modeLabel.classList.toggle('hidden', !modeText);
+      if (this.modeLabel.textContent !== modeText) this.modeLabel.textContent = modeText;
+    }
 
     for (let i = 0; i < 2; i++) {
       const b = this.blocks[i];

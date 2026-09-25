@@ -55,7 +55,8 @@ export const K = {
   sailFurl: C('#cfc3a8'),
   sailFurlDk: C('#9c917a'),
   rig: C('#5a3d28'),
-  cloth: C('#e8e0cf'),
+  // Nobori un ton sous la planche (#e8e0cf) : en mode Valeurs ils ne doivent pas rivaliser avec le perso.
+  cloth: C('#d2c9b6'),
   clothMark: C('#a8342a'),
   pennant: C('#c8412e'),
   fish: C('#8d9aa8'),
