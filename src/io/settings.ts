@@ -80,6 +80,11 @@ export interface Settings {
   levelId: number;
   /** Relais de sessions (npm run server). */
   netUrl: string;
+  /**
+   * Vrai seulement si le joueur a tapé lui-même une adresse dans le champ Serveur. Sinon `netUrl`
+   * n'est que le défaut du build, et un nouveau build (relais corrigé) le remplace au chargement.
+   */
+  netUrlCustom: boolean;
   /** Dernier code saisi, pour ne pas le retaper. */
   netLastCode: string;
 }
@@ -103,8 +108,28 @@ export const DEFAULT_SETTINGS: Settings = {
   seed: 1234,
   levelId: 0,
   netUrl: defaultNetUrl(),
+  netUrlCustom: false,
   netLastCode: '',
 };
+
+/**
+ * Adresse de relais telle que le navigateur l'attend : `wss://` pour un site en https, `ws://` en
+ * http, rien derrière l'hôte. Tolère un copier-coller de la page Render (https://…, / final) ou un
+ * hôte nu. Vide si rien d'exploitable.
+ */
+export function normalizeRelayUrl(raw: string): string {
+  let v = raw.trim();
+  if (!v) return '';
+  if (v.startsWith('https://')) v = `wss://${v.slice(8)}`;
+  else if (v.startsWith('http://')) v = `ws://${v.slice(7)}`;
+  else if (!/^wss?:\/\//.test(v)) {
+    // Hôte nu : ws:// en local et en LAN (pas de TLS), wss:// pour un relais hébergé.
+    const host = v.startsWith('[') ? v.slice(0, v.indexOf(']') + 1) : v.split(/[/:]/)[0];
+    const local = host === 'localhost' || host === '[::1]' || /^(127|10)\./.test(host) || /^192\.168\./.test(host) || host.endsWith('.local');
+    v = `${local ? 'ws' : 'wss'}://${v}`;
+  }
+  return v.replace(/\/+$/, '');
+}
 
 /**
  * Relais fixé au build : `VITE_NET_URL` (ex. wss://tsj-relais.onrender.com), à renseigner dans les
@@ -112,7 +137,7 @@ export const DEFAULT_SETTINGS: Settings = {
  */
 function configuredNetUrl(): string {
   const v: unknown = import.meta.env?.VITE_NET_URL;
-  return typeof v === 'string' ? v.trim() : '';
+  return typeof v === 'string' ? normalizeRelayUrl(v) : '';
 }
 
 /** Même hôte que la page, port du relais : marche tel quel en LAN comme en local. */
@@ -122,18 +147,21 @@ function sameHostNetUrl(): string {
   return `${proto}://${host}:8787`;
 }
 
-function defaultNetUrl(): string {
+/** Relais par défaut : celui du build s'il y en a un, sinon le même hôte que la page. */
+export function defaultNetUrl(): string {
   return configuredNetUrl() || sameHostNetUrl();
 }
 
 /**
- * Relais enregistré dans le navigateur, ou null pour garder le défaut. L'ancien défaut automatique
- * (même hôte, port 8787) n'a jamais été un choix du joueur : sur un site déployé il ne mène nulle
- * part, un relais configuré au build le remplace donc.
+ * Relais enregistré dans le navigateur, ou null pour prendre le défaut du build. Seule une adresse
+ * tapée par le joueur (`custom`) survit à un nouveau build : un défaut enregistré au passage
+ * (ancien « même hôte, port 8787 », ou un relais mal saisi puis corrigé sur l'hébergeur) est
+ * remplacé par le relais configuré. Sans relais configuré (dev, LAN), l'adresse enregistrée reste.
  */
-export function resolveSavedNetUrl(saved: unknown, configured: string, legacyDefault: string): string | null {
+export function resolveSavedNetUrl(saved: unknown, custom: boolean, configured: string, legacyDefault: string): string | null {
   if (typeof saved !== 'string' || !saved.startsWith('ws')) return null;
-  if (configured && saved === legacyDefault) return null;
+  if (!configured) return saved;
+  if (!custom || saved === legacyDefault) return null;
   return saved;
 }
 
@@ -241,8 +269,11 @@ function mergeSettings(base: Settings, parsed: Partial<Settings>): Settings {
   }
   if (typeof parsed.seed === 'number' && Number.isFinite(parsed.seed)) out.seed = parsed.seed >>> 0;
   if (typeof parsed.levelId === 'number') out.levelId = clampLevelId(parsed.levelId);
-  const netUrl = resolveSavedNetUrl(parsed.netUrl, configuredNetUrl(), sameHostNetUrl());
-  if (netUrl) out.netUrl = netUrl;
+  const netUrl = resolveSavedNetUrl(parsed.netUrl, parsed.netUrlCustom === true, configuredNetUrl(), sameHostNetUrl());
+  if (netUrl) {
+    out.netUrl = netUrl;
+    out.netUrlCustom = parsed.netUrlCustom === true;
+  }
   if (typeof parsed.netLastCode === 'string') out.netLastCode = parsed.netLastCode.slice(0, 6);
   return out;
 }
