@@ -4,6 +4,7 @@
  * dans ./index.ts.
  */
 import type { ThemeId, ThemePainter } from './types';
+import { bambooPainter } from './bamboo/painter';
 import { forgePainter } from './forge/painter';
 import { portPainter } from './port/painter';
 
@@ -14,7 +15,7 @@ export const THEME_IDS: readonly ThemeId[] = ['port', 'forge', 'bamboo'];
 export const PAINTERS: Record<ThemeId, ThemePainter> = {
   port: portPainter,
   forge: forgePainter,
-  bamboo: { ...portPainter, id: 'bamboo', name: 'Bambouseraie maudite', hud: 'BAMBOUSERAIE MAUDITE' },
+  bamboo: bambooPainter,
 };
 
 /**

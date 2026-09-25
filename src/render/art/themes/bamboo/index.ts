@@ -1,12 +1,11 @@
 /**
- * Bambouseraie maudite (provisoire) : tant que le thème n'est pas peint, il reprend le port.
- * À remplacer par palette.ts / paint.ts / runtime.ts sur le modèle de themes/port.
+ * Bambouseraie maudite : une forêt de bambous la nuit, des ruines couvertes de mousse et un ryū de
+ * jade qui traverse le ciel devant la lune.
  */
 import type { ThemeModule } from '../runtime';
-import { portPainter } from '../port/painter';
-import { createPortRuntime } from '../port/runtime';
+import { bambooPainter } from './painter';
+import { createBambooRuntime } from './runtime';
 
-export const bambooTheme: ThemeModule = {
-  painter: { ...portPainter, id: 'bamboo', name: 'Bambouseraie maudite', hud: 'BAMBOUSERAIE MAUDITE' },
-  createRuntime: createPortRuntime,
-};
+export { bambooPainter };
+
+export const bambooTheme: ThemeModule = { painter: bambooPainter, createRuntime: createBambooRuntime };
