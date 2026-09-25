@@ -210,7 +210,7 @@ export class ArtView {
     this.updateHeroes(world, state);
     this.drawRopes(world, state, poses);
     this.drawParticles(world.parts, L0, T0, usedW, usedH);
-    this.drawOverlay(state, poses, opts);
+    this.drawOverlay(state, poses, opts, world);
 
     const tPixi = performance.now();
     this.stats.prep = tPixi - tPrep;
@@ -427,10 +427,22 @@ export class ArtView {
     }
   }
 
-  /** Aides de jeu dessinées en pixels : fenêtre de cut manuel. */
-  private drawOverlay(state: GameState, poses: readonly PlayerPose[], opts: ArtViewOptions): void {
+  /**
+   * Aides de jeu dessinées en pixels : fenêtre de cut manuel, et en mode « Couche de jeu »
+   * l'arrivée (son torii et son voile vivent dans le décor, coupé dans ce mode).
+   */
+  private drawOverlay(state: GameState, poses: readonly PlayerPose[], opts: ArtViewOptions, world: ArtWorld): void {
     const g = this.overlay;
     g.clear();
+    const goal = world.shape?.level.goal;
+    if (opts.mode === 'play' && goal) {
+      const x = goal.x / ART_SCALE;
+      const y = goal.y / ART_SCALE;
+      const w = goal.w / ART_SCALE;
+      const h = goal.h / ART_SCALE;
+      g.rect(x, y, w, h).fill({ color: 0xffd98a, alpha: 0.16 });
+      g.rect(x - 2, y, 2, h).rect(x + w, y, 2, h).fill(0xffd98a);
+    }
     for (let i = 0; i < state.playerCount; i++) {
       const pl = state.players[i];
       if (pl.pendingCutEnemy < 0) continue;

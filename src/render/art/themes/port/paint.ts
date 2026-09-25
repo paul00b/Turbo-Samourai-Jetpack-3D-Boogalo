@@ -312,23 +312,26 @@ function paintStrings(shape: LevelShape, b: Buf, props: PropInstance[]): void {
   const rows = [...new Set(blocks.map((r) => r.y0))].sort((a, c) => a - c);
   for (const [a, c] of rowPairs(blocks, 12)) {
     const seed = hash2(a.x0, a.y0, 51);
-    if (seed < 0.25) continue;
+    // Une paire sur deux environ : la planche n'a que deux guirlandes, le ciel doit rester lisible.
+    if (seed < 0.45) continue;
     const ax = (a.x1 + 1) * T - 2;
     const ay = a.y1 * T + T - 3;
     const bx = c.x0 * T + 1;
     const by = c.y1 * T + T - 3;
     const gap = bx - ax;
     const sag = 8 + gap * 0.1;
-    sagRope(b, ax, ay, bx, by, sag, K.lantern.rope);
     const lowRow = rows.indexOf(a.y0) >= rows.length - 2;
-    if (lowRow || seed > 0.7) {
+    const lanterns = (lowRow && seed > 0.55) || seed > 0.85;
+    if (!lanterns && seed <= 0.7) continue;
+    sagRope(b, ax, ay, bx, by, sag, K.lantern.rope);
+    if (lanterns) {
       const n = Math.max(1, Math.floor(gap / 26));
       for (let i = 1; i <= n; i++) {
         const [x, y] = sagPoint(ax, ay, bx, by, sag, i / (n + 1));
         props.push({ kind: 'lantern', x: Math.round(x), y: Math.round(y), phase: hash2(a.x0, i, 52) * 4, layer: 'back' });
       }
-    } else {
-      // Fanions rouge et blanc sur les cordes des rangées hautes.
+    } else if (seed > 0.7) {
+      // Fanions rouge et blanc sur quelques cordes des rangées hautes.
       for (let s = 0.08, i = 0; s < 0.94; s += 8 / gap, i++) {
         const [x, y] = sagPoint(ax, ay, bx, by, sag, s);
         const col = i % 2 ? K.pennant : K.cloth;

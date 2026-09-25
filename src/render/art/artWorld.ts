@@ -239,6 +239,35 @@ export class ArtWorld {
       hero.draw(theme.rim, this.gameTime);
       refreshTexture(this.heroTex[i]);
     }
+    this.updateParticles(level, dt);
+  }
+
+  /**
+   * Particules des planches, plus un sol : ce qui tombe (débris, braises, poussière) rebondit à
+   * peine puis se couche sur la tuile pleine au lieu de traverser le décor.
+   */
+  private updateParticles(level: Level, dt: number): void {
+    if (dt <= 0) return;
+    const list = this.parts.list;
+    const ts = TILE_SIZE / ART_SCALE;
+    for (const p of list) {
+      if (p.grav <= 0) continue;
+      const tx = Math.floor((p.x + p.vx * dt) / ts);
+      const ty = Math.floor((p.y + p.vy * dt) / ts);
+      if (!isSolidTile(tileAt(level, tx, ty))) continue;
+      // Contact : on reste au-dessus de la tuile, on perd presque toute la vitesse.
+      const floorY = ty * ts - 0.01;
+      if (p.vy > 0 && p.y <= floorY + 0.5) {
+        p.y = Math.min(p.y, floorY);
+        p.vy = Math.abs(p.vy) > 60 ? -p.vy * 0.25 : 0;
+        p.vx *= 0.5;
+        if (p.vy === 0) p.grav = 0;
+      } else {
+        p.vx = 0;
+        p.vy = 0;
+        p.grav = 0;
+      }
+    }
     this.parts.update(dt);
   }
 }

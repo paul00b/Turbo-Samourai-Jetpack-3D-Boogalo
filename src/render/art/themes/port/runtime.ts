@@ -34,6 +34,38 @@ interface Statics {
   /** Deux motifs de pluie lointaine qui se répètent (256 px), à des vitesses différentes. */
   rainA: Texture;
   rainB: Texture;
+  junk: Texture;
+}
+
+const JUNK_W = 150;
+const JUNK_H = 132;
+/** Ligne de flottaison de la jonque dans sa texture. */
+const JUNK_WL = 118;
+
+/**
+ * Jonque amarrée en silhouette (la jonque de la planche, réduite et passée dans les valeurs
+ * sombres) : coque, cabine aux fenêtres allumées, mât, voile ferlée, haubans.
+ */
+function junkSilhouette(): Buf {
+  const b = new Buf(JUNK_W, JUNK_H);
+  const hull = C('#0e1624');
+  const line = C('#0a101b');
+  const rim = C('#1b2740');
+  b.poly([6, JUNK_WL - 16, 144, JUNK_WL - 16, 134, JUNK_WL, 18, JUNK_WL], hull);
+  b.poly([0, JUNK_WL - 24, 12, JUNK_WL - 16, 6, JUNK_WL - 16], hull);
+  b.poly([144, JUNK_WL - 16, 150, JUNK_WL - 26, 150, JUNK_WL - 16], hull);
+  for (let y = JUNK_WL - 12; y < JUNK_WL; y += 4) b.hline(10 + (y - JUNK_WL + 16) * 0.5, 140 - (y - JUNK_WL + 16) * 0.5, y, line);
+  b.hline(6, 143, JUNK_WL - 16, rim);
+  b.rect(98, JUNK_WL - 30, 38, 14, hull);
+  b.poly([94, JUNK_WL - 29, 140, JUNK_WL - 29, 136, JUNK_WL - 34, 98, JUNK_WL - 34], line);
+  for (let x = 102; x < 132; x += 8) b.rect(x, JUNK_WL - 25, 3, 4, K.window);
+  b.rect(62, 12, 2, JUNK_WL - 28, hull);
+  b.rect(30, 26, 66, 3, hull);
+  for (let x = 30; x < 96; x++) b.rect(x, 29, 1, 3 + Math.round(fsin(x * 0.5) * 1), x % 9 < 2 ? line : C('#131c2e'));
+  b.line(63, 12, 8, JUNK_WL - 24, line);
+  b.line(63, 12, 146, JUNK_WL - 26, line);
+  rimTop(b, hull, rim);
+  return b;
 }
 
 /** Motif de pluie périodique : des gouttes de 3 px inclinées comme KIT.rain, raccordées sur les bords. */
@@ -114,6 +146,7 @@ function getStatics(): Statics {
     eyeGlow: glowTexture(16, K.eyeGlow, 0.32, 'port-eye-glow'),
     rainA: textureFromBuf(rainTile(1, 26, K.rainFar), 'port-rain-a'),
     rainB: textureFromBuf(rainTile(3, 26, K.rainFar), 'port-rain-b'),
+    junk: textureFromBuf(junkSilhouette(), 'port-junk'),
   };
   return statics;
 }
@@ -270,7 +303,11 @@ export function createPortRuntime(): ThemeRuntime {
     'port-sea',
   );
   const foam = new PixelBatch();
-  back.addChild(skyTop, sky.view, cloudFar.view, bolt.g, cloudNear.view, far.view, ambient.g, glows, rainFarA, rainFarB, umi.canvas.sprite, sea.mesh, foam.g);
+  // Jonques amarrées derrière les pontons (parallaxe 0,6), leur fanal et leur reflet d'écume.
+  const harbor = new Container();
+  const junks: Sprite[] = [];
+  const junkLamps: Sprite[] = [];
+  back.addChild(skyTop, sky.view, cloudFar.view, bolt.g, cloudNear.view, far.view, ambient.g, glows, rainFarA, rainFarB, umi.canvas.sprite, sea.mesh, foam.g, harbor);
 
   const rain = new PixelBatch();
   front.addChild(rain.g);
@@ -362,11 +399,13 @@ export function createPortRuntime(): ThemeRuntime {
       }
       ambient.flush();
 
-      // Umibozu : une apparition tous les 1400 px de parallaxe, celle qui est la plus proche.
-      const span = 1400;
+      // Umibozu : une apparition tous les `span` px de parallaxe, celle qui est la plus proche du
+      // centre. L'espacement dépasse la vue de 600 px : le passage d'une apparition à l'autre se
+      // fait toujours hors champ, même en vue très large (zoom dynamique à deux joueurs).
+      const span = Math.max(1400, viewW + 600);
       const base = camX * 0.3 + viewW / 2;
-      const inst = Math.round((base - 700) / span);
-      const hx = inst * span + 700 - camX * 0.3;
+      const inst = Math.round((base - span / 2) / span);
+      const hx = inst * span + span / 2 - camX * 0.3;
       const hy = hz - 55 + fsin(t * 0.5) * 3;
       let heroX = viewW / 2;
       let best = Infinity;
@@ -393,6 +432,33 @@ export function createPortRuntime(): ThemeRuntime {
         }
       }
       foam.flush();
+
+      // Port : une jonque tous les 760 px de parallaxe, posée sous l'horizon, bercée d'un pixel.
+      const span2 = 760;
+      const base2 = camX * 0.6;
+      let ji = 0;
+      for (let k = Math.floor((base2 - JUNK_W) / span2); k * span2 - base2 < viewW + JUNK_W; k++) {
+        const x = k * span2 + 180 + Math.floor(hash2(k, 0, 61) * 260) - base2;
+        const y = hz + 26 + Math.floor(hash2(k, 1, 61) * 8) + Math.round(fsin(t * 1.1 + k * 1.7) * 0.9);
+        let s = junks[ji];
+        if (!s) {
+          s = new Sprite(S.junk);
+          junks.push(s);
+          harbor.addChild(s);
+          const lamp = new Sprite(S.boatGlow);
+          junkLamps.push(lamp);
+          harbor.addChild(lamp);
+        }
+        s.visible = true;
+        s.position.set(Math.round(x), y - JUNK_WL);
+        junkLamps[ji].visible = true;
+        junkLamps[ji].position.set(Math.round(x) + 138 - 6, y - 36 - 6);
+        ji++;
+      }
+      for (; ji < junks.length; ji++) {
+        junks[ji].visible = false;
+        junkLamps[ji].visible = false;
+      }
 
       // Devant : pluie proche (s'écarte de 24 px autour de chaque perso), éclaboussures, gouttes.
       rain.clear();
