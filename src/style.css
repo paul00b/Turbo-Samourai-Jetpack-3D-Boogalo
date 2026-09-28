@@ -95,8 +95,7 @@ body.debug-open #hud, body.debug-open #menu { right: 360px; }
 #menu { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(8, 10, 16, 0.35), rgba(8, 10, 16, 0.78)); backdrop-filter: blur(1.5px); overflow: auto; }
 .menu-screen { width: min(560px, 94vw); padding: 20px 0; }
 .menu-screen.wide { width: min(860px, 96vw); }
-.menu-eyebrow { margin: 0 0 10px; text-align: center; font-family: var(--pixel); font-size: 13px; letter-spacing: 0.1em; color: var(--gold); text-shadow: 0 1px 0 #000; }
-.game-title { margin: 0 0 8px; font-family: var(--pixel); font-weight: 400; font-size: clamp(26px, 4.6vw, 50px); white-space: nowrap; line-height: 1.02; letter-spacing: 0.03em; text-align: center; color: #fff; text-shadow: 0 0 26px rgba(79, 209, 255, 0.35), 0 3px 0 #000, 3px 0 0 #000; }
+.game-title { margin: 0 0 30px; font-family: var(--pixel); font-weight: 400; font-size: clamp(26px, 4.6vw, 50px); white-space: nowrap; line-height: 1.02; letter-spacing: 0.03em; text-align: center; color: #fff; text-shadow: 0 0 26px rgba(79, 209, 255, 0.35), 0 3px 0 #000, 3px 0 0 #000; }
 .game-title .title-accent { color: var(--hero); }
 .menu-sub { text-align: center; color: var(--muted); margin: 0 0 22px; text-shadow: 0 1px 0 #000; }
 .menu-panel { background: rgba(17, 20, 30, 0.94); border: 1px solid var(--line); border-radius: 2px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); }
@@ -122,22 +121,26 @@ body.debug-open #hud, body.debug-open #menu { right: 360px; }
 .menu-block { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; border-top: 1px dashed var(--line); }
 .menu-status { font-size: 12px; color: var(--muted); line-height: 1.5; }
 .menu-note { font-size: 13px; color: var(--muted); margin: 0; }
-.menu-hint { text-align: center; color: var(--muted); font-size: 12px; margin: 14px 0 0; text-shadow: 0 1px 0 #000; }
 .capture-status { color: var(--gold); font-size: 14px; }
 /* Menu principal : les deux modes en grand. */
 .title-screen { width: min(760px, 94vw); }
 .mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.menu-btn.mode-card { display: flex; flex-direction: column; gap: 8px; padding: 20px 20px 18px; min-height: 150px; background: rgba(17, 20, 30, 0.94); border-left-width: 4px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); }
+.menu-btn.mode-card { display: flex; flex-direction: column; gap: 8px; padding: 20px 20px 18px; min-height: 118px; background: rgba(17, 20, 30, 0.94); border-left-width: 4px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); }
 .menu-btn.mode-card.focused { background: #1a1f2d; }
 .mode-name { font-size: 30px; letter-spacing: 0.1em; text-transform: uppercase; color: #fff; text-shadow: 0 2px 0 #000; }
 .mode-card.focused .mode-name { color: var(--gold); }
 .mode-lead { font-family: var(--body); font-size: 15px; line-height: 1.4; color: var(--text); }
-.mode-meta { margin-top: auto; font-family: var(--body); font-size: 12px; color: var(--muted); }
 .title-more { margin-top: 14px; }
+.title-more + .title-more { margin-top: 10px; }
 @media (max-width: 560px) { .mode-cards { grid-template-columns: 1fr; } .menu-btn.mode-card { min-height: 0; } }
 /* Écran d'un mode : une carte = un bouton, qui lance la partie. */
 .map-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .menu-btn.map-btn { display: flex; flex-direction: column; gap: 4px; }
+/* Mes cartes : une ligne par carte perso, Jouer et Modifier à droite. */
+.mymap-row { display: flex; gap: 8px; align-items: center; padding: 8px 10px; background: #10131c; border: 1px solid var(--line); border-radius: 2px; }
+.mymap-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mymap-info .map-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mymap-row > .menu-btn { flex: 0 0 auto; padding: 8px 14px; font-size: 15px; }
 .map-name { font-size: 18px; }
 .map-sub { font-family: var(--body); font-size: 12px; color: var(--muted); }
 .devices-note { font-size: 12px; }

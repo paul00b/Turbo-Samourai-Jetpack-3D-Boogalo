@@ -21,12 +21,13 @@ import type { KeyboardMouse } from '../io/input/keyboardMouse';
 import { defaultNetUrl, normalizeRelayUrl, type SettingsStore } from '../io/settings';
 import { isLocalRelay } from '../net/session';
 import { clear, h } from './dom';
+import { EditorStore } from '../editor/store';
 import { formatTime } from './hud';
 import { FocusNav, MenuInput, type MenuAction } from './focusNav';
 import { LeaderboardClient } from '../io/leaderboard';
 import { LeaderboardUi, type BtnFactory } from './leaderboard';
 
-export type ScreenId = 'title' | 'race' | 'kills' | 'net' | 'controls' | 'settings' | 'pause' | 'complete' | 'board';
+export type ScreenId = 'title' | 'race' | 'kills' | 'net' | 'controls' | 'settings' | 'pause' | 'complete' | 'board' | 'mymaps';
 
 /** Ce que promet chaque mode, sur sa carte du menu principal et en tête de son écran. */
 const MODE_LEAD: Record<LevelMode, string> = {
@@ -68,6 +69,11 @@ export class Menu {
   private readonly lbBtn: BtnFactory = (label, onClick, extra) => this.btn(label, onClick, extra);
   /** Branché par main.ts : ouvrir l'éditeur, y revenir après un test. */
   openEditor: (() => void) | null = null;
+  /** Mes cartes : modifier une carte perso dans l'éditeur, ou la jouer directement. */
+  openMap: ((id: string) => void) | null = null;
+  playMap: ((id: string) => void) | null = null;
+  /** Écran Classement ouvert depuis le menu principal : il propose les deux modes. */
+  private boardFromTitle = false;
   returnToEditor: (() => void) | null = null;
 
   constructor(
@@ -192,7 +198,23 @@ export class Menu {
         el = this.buildComplete();
         break;
       case 'board':
-        el = this.lb.boardScreen(this.boardMode, this.deps.game.state.levelId, this.lbBtn, `Classement · ${LEVEL_MODE_LABEL[this.boardMode]}`, () => this.back());
+        el = this.lb.boardScreen(
+          this.boardMode,
+          this.deps.game.state.levelId,
+          this.lbBtn,
+          this.boardFromTitle ? 'Classements' : `Classement · ${LEVEL_MODE_LABEL[this.boardMode]}`,
+          () => this.back(),
+          this.boardFromTitle
+            ? (m) => {
+                this.boardMode = m;
+                this.lb.load(this.lb.boardFor(m, this.deps.game.state.levelId));
+                this.render();
+              }
+            : undefined,
+        );
+        break;
+      case 'mymaps':
+        el = this.buildMyMaps();
         break;
     }
     this.screens.set(id, el);
@@ -230,10 +252,8 @@ export class Menu {
     const s = this.deps.settings.get();
     const lastMode = (LEVEL_INFOS[s.levelId] ?? LEVEL_INFOS[0]).mode;
     const card = (mode: LevelMode): HTMLButtonElement => {
-      const maps = LEVEL_INFOS.filter((l) => l.mode === mode);
-      const meta = `${maps.length} cartes · ${maps.map((m) => m.name).join(', ')}`;
       return this.btn(
-        [h('span', { class: 'mode-name', text: LEVEL_MODE_LABEL[mode] }), h('span', { class: 'mode-lead', text: MODE_LEAD[mode] }), h('span', { class: 'mode-meta', text: meta })],
+        [h('span', { class: 'mode-name', text: LEVEL_MODE_LABEL[mode] }), h('span', { class: 'mode-lead', text: MODE_LEAD[mode] })],
         () => this.push(mode),
         { class: `menu-btn mode-card mode-${mode}`, 'data-nav-row': 'modes', 'data-nav-default': mode === lastMode },
       );
@@ -241,19 +261,26 @@ export class Menu {
     return h(
       'div',
       { class: 'menu-screen title-screen' },
-      h('p', { class: 'menu-eyebrow', text: 'PROTOTYPE · DIRECTION ARTISTIQUE V1' }),
       h('h1', { class: 'game-title' }, 'TURBO-SAMOURAÏ', h('br'), 'JETPACK 3D BOOGALOO'),
-      h('p', { class: 'menu-sub', text: 'Deux grappins, un jetpack, des tongs' }),
       h('div', { class: 'mode-cards' }, card('race'), card('kills')),
       h(
         'div',
         { class: 'menu-row title-more' },
-        this.btn('Multijoueur en ligne', () => this.push('net'), { class: 'menu-btn secondary', 'data-nav-row': 'more' }),
-        this.btn('Paramètres', () => this.push('settings'), { class: 'menu-btn secondary', 'data-nav-row': 'more' }),
-        this.openEditor ? this.btn('Éditeur de niveaux', () => this.openEditor?.(), { class: 'menu-btn secondary', 'data-nav-row': 'more' }) : null,
+        this.btn('Classements', () => {
+          this.boardFromTitle = true;
+          this.boardMode = lastMode;
+          this.lb.load(this.lb.boardFor(lastMode, s.levelId));
+          this.push('board');
+        }, { 'data-nav-row': 'more' }),
+        this.btn('Mes cartes', () => this.push('mymaps'), { 'data-nav-row': 'more' }),
+        this.openEditor ? this.btn('Éditeur', () => this.openEditor?.(), { 'data-nav-row': 'more' }) : null,
       ),
-      h('p', { class: 'menu-hint' }, 'Flèches pour choisir · Entrée valide · Échap revient · Manette : croix, A valide, B retour'),
-      h('p', { class: 'menu-hint', text: this.deps.audio.unlocked ? 'Son actif' : 'Son : activé au premier clic ou à la première touche' }),
+      h(
+        'div',
+        { class: 'menu-row title-more' },
+        this.btn('Multijoueur en ligne', () => this.push('net'), { class: 'menu-btn secondary', 'data-nav-row': 'more2' }),
+        this.btn('Paramètres', () => this.push('settings'), { class: 'menu-btn secondary', 'data-nav-row': 'more2' }),
+      ),
     );
   }
 
@@ -285,21 +312,51 @@ export class Menu {
       b.classList.toggle('selected', s.playerCount === n);
       return b;
     });
-    const lead = mode === 'race' ? `${MODE_LEAD.race} ${this.restartKeyLabel()} recommence à zéro, chrono compris.` : MODE_LEAD.kills;
+    const lead = mode === 'race' ? `${this.restartKeyLabel()} recommence la course à zéro.` : null;
     return h(
       'div',
       { class: 'menu-screen' },
       this.panel(
         LEVEL_MODE_LABEL[mode],
-        h('p', { class: 'menu-note', text: lead }),
+        lead ? h('p', { class: 'menu-note', text: lead }) : null,
         inGame ? null : h('div', { class: 'menu-row' }, ...counts),
         inGame ? h('p', { class: 'menu-note', text: 'Choisir une carte relance la partie immédiatement.' }) : devices,
         h('div', { class: 'map-list' }, ...list),
         this.btn('Classements', () => {
+          this.boardFromTitle = false;
           this.boardMode = mode;
           this.lb.load(this.lb.boardFor(mode, this.deps.game.state.levelId));
           this.push('board');
         }),
+        this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
+      ),
+    );
+  }
+
+  /** Mes cartes : les cartes de l'éditeur, à jouer tout de suite ou à modifier. */
+  private buildMyMaps(): HTMLElement {
+    const maps = new EditorStore().list();
+    const rows = maps.map((m, i) =>
+      h(
+        'div',
+        { class: 'mymap-row' },
+        h(
+          'div',
+          { class: 'mymap-info' },
+          h('span', { class: 'map-name', text: m.name }),
+          h('span', { class: 'map-sub', text: `${LEVEL_MODE_LABEL[m.mode]} · ${m.rows[0]?.length ?? 0} × ${m.rows.length}` }),
+        ),
+        this.btn('Jouer', () => this.playMap?.(m.id), { 'data-nav-group': `mymap-${i}`, 'data-nav-default': i === 0 }),
+        this.btn('Modifier', () => this.openMap?.(m.id), { class: 'menu-btn secondary', 'data-nav-group': `mymap-${i}` }),
+      ),
+    );
+    return h(
+      'div',
+      { class: 'menu-screen' },
+      this.panel(
+        'Mes cartes',
+        rows.length ? h('div', { class: 'map-list' }, ...rows) : h('p', { class: 'menu-note', text: "Aucune carte pour l'instant." }),
+        this.openEditor ? this.btn(rows.length ? 'Nouvelle carte' : 'Créer une carte', () => this.openEditor?.(), { 'data-nav-default': rows.length === 0 }) : null,
         this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
       ),
     );

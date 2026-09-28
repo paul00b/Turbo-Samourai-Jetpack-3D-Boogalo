@@ -5,7 +5,7 @@
  */
 import type { Game } from '../app/game';
 import { UNRANKED_LABEL } from '../app/replayRecorder';
-import { DT, LEVEL_INFOS, type LevelMode, type ReplayData } from '../sim';
+import { DT, LEVEL_INFOS, LEVEL_MODE_LABEL, type LevelMode, type ReplayData } from '../sim';
 import type { LeaderboardClient } from '../io/leaderboard';
 import { NAME_MAX, type BoardView, type SubmitResult } from '../net/scoresApi';
 import { h } from './dom';
@@ -172,8 +172,22 @@ export class LeaderboardUi {
     });
   }
 
-  boardScreen(mode: LevelMode, currentLevel: number, btn: BtnFactory, title: string, back: () => void): HTMLElement {
+  /** `onMode` : affiche les onglets Course / Arcade (écran ouvert depuis le menu principal). */
+  boardScreen(mode: LevelMode, currentLevel: number, btn: BtnFactory, title: string, back: () => void, onMode?: (m: LevelMode) => void): HTMLElement {
     const levelId = this.boardFor(mode, currentLevel);
+    const modeTabs = onMode
+      ? h(
+          'div',
+          { class: 'menu-row' },
+          ...(['race', 'kills'] as const).map((m) => {
+            const b = btn(LEVEL_MODE_LABEL[m], () => {
+              if (m !== mode) onMode(m);
+            }, { 'data-nav-group': 'lb-mode', class: 'menu-btn secondary' });
+            b.classList.toggle('selected', m === mode);
+            return b;
+          }),
+        )
+      : null;
     const maps = LEVEL_INFOS.filter((l) => l.mode === mode);
     const tabs = maps.map((m) => {
       const b = btn(m.name, () => {
@@ -191,7 +205,6 @@ export class LeaderboardUi {
     else if (st.kind === 'error') body = h('p', { class: 'lb-status lb-error', text: st.message === 'hors ligne' ? 'Classement hors ligne.' : `Classement indisponible : ${st.message}.` });
     else if (st.view.total === 0) body = h('p', { class: 'lb-status', text: 'Personne n\'a encore de temps classé sur cette carte. À toi.' });
     else body = this.table(st.view, levelId);
-    const info = LEVEL_INFOS[levelId];
     return h(
       'div',
       { class: 'menu-screen' },
@@ -199,8 +212,8 @@ export class LeaderboardUi {
         'div',
         { class: 'menu-panel' },
         h('h2', { class: 'menu-title', text: title }),
+        modeTabs,
         h('div', { class: 'menu-row' }, ...tabs),
-        h('p', { class: 'menu-note', text: `${info?.subtitle ?? ''} Parties solo, params par défaut, vérifiées par le serveur.` }),
         body,
         h('p', { class: 'menu-note', text: this.client.identity.name ? `Tu joues sous le nom « ${this.client.identity.name} ».` : 'Ton pseudo sera demandé à la fin de ta première partie classée.' }),
         btn('Retour', back, { class: 'menu-btn secondary' }),

@@ -193,6 +193,22 @@ export class LevelEditor {
     this.onClose?.();
   }
 
+  /** Depuis le menu (Mes cartes) : ouvre l'éditeur sur cette carte. */
+  openMap(id: string): void {
+    const saved = this.store.get(id);
+    if (saved) {
+      if (this.map) this.flushSave();
+      this.setMap(saved);
+    }
+    this.open();
+  }
+
+  /** Depuis le menu : joue la carte tout de suite. Si elle a une erreur bloquante, l'éditeur reste ouvert dessus. */
+  playMap(id: string): void {
+    this.openMap(id);
+    this.test();
+  }
+
   /** Après un test : le jeu revient au menu, l'éditeur reprend exactement où il en était. */
   returnFromTest(): void {
     this.deps.game.endCustom();

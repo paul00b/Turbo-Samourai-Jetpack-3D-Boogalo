@@ -2,6 +2,17 @@
  * Périphérique clavier + souris. Garde l'état "enfoncé" + un latch "pressé depuis le dernier
  * échantillonnage" pour ne jamais perdre un tap plus court qu'un tick.
  */
+/** Champ de saisie de texte (pas les cases à cocher, curseurs ni boutons). */
+export function isTextField(t: EventTarget | null): boolean {
+  if (!t || !(t as HTMLElement).tagName) return false;
+  const el = t as HTMLElement;
+  if (el.isContentEditable) return true;
+  if (el.tagName === 'TEXTAREA') return true;
+  if (el.tagName !== 'INPUT') return false;
+  const type = ((el as HTMLInputElement).type || 'text').toLowerCase();
+  return ['text', 'search', 'url', 'email', 'password', 'number', 'tel'].includes(type);
+}
+
 export class KeyboardMouse {
   readonly down = new Set<string>();
   private readonly latch = new Set<string>();
@@ -16,6 +27,13 @@ export class KeyboardMouse {
   captureKeys = false;
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
+    // On tape dans un champ (pseudo, code de session, éditeur) : les lettres vont au champ, pas au
+    // jeu. Sinon R relancerait la course, Q/D marcheraient… Seuls les menus voient la touche
+    // (Entrée valide, Échap revient), et on ne bloque rien (espace, retour arrière).
+    if (isTextField(e.target)) {
+      if (!e.repeat) this.enqueue(e.code);
+      return;
+    }
     if (e.repeat) {
       if (this.captureKeys && this.shouldPrevent(e.code)) e.preventDefault();
       return;

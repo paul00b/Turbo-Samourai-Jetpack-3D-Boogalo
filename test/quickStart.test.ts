@@ -1,3 +1,4 @@
+import { isTextField } from '../src/io/input/keyboardMouse';
 import { describe, expect, it } from 'vitest';
 import { getLevel, LEVEL_INFOS, LEVEL_MODE_LABEL } from '../src/sim';
 import { SettingsStore } from '../src/io/settings';
@@ -97,5 +98,19 @@ describe('menu rapide', () => {
     expect(restartHint(s)).toBe('R recommencer');
     s.devices[0].kind = 'gamepad';
     expect(restartHint(s)).toBe('Select / Share recommencer');
+  });
+});
+
+describe('taper dans un champ ne pilote pas le jeu', () => {
+  it('un champ texte est reconnu (R y écrit une lettre au lieu de relancer), pas une case à cocher', () => {
+    const el = (tagName: string, type?: string, editable = false) => ({ tagName, type, isContentEditable: editable }) as unknown as EventTarget;
+    expect(isTextField(el('INPUT', 'text'))).toBe(true);
+    expect(isTextField(el('INPUT'))).toBe(true);
+    expect(isTextField(el('TEXTAREA'))).toBe(true);
+    expect(isTextField(el('DIV', undefined, true))).toBe(true);
+    expect(isTextField(el('INPUT', 'checkbox'))).toBe(false);
+    expect(isTextField(el('INPUT', 'range'))).toBe(false);
+    expect(isTextField(el('BUTTON'))).toBe(false);
+    expect(isTextField(null)).toBe(false);
   });
 });

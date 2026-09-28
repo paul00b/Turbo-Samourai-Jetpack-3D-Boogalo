@@ -13,7 +13,7 @@ thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 334 tests : déterminisme, rollback, physique, réseau, classement, éditeur, garde-fou statique, direction artistique
+npm test             # 335 tests : déterminisme, rollback, physique, réseau, classement, éditeur, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
@@ -169,7 +169,8 @@ Ce qui manque pour un vrai jeu en ligne : la reconnexion après coupure et la d�
 
 Lancer une partie tient en deux choix. Le **menu principal** propose les deux modes en grand,
 **Course** (atteindre l'arrivée le plus vite possible) et **Arcade** (éliminer tous les ennemis de la
-carte), plus Multijoueur en ligne et Paramètres. Chaque mode ouvre la liste de ses cartes, avec le
+carte), puis Classements (les deux modes, carte par carte), Mes cartes (jouer ou modifier ses
+cartes perso), Éditeur, Multijoueur en ligne et Paramètres. Chaque mode ouvre la liste de ses cartes, avec le
 choix 1 ou 2 joueurs : une carte = une partie. Le focus est toujours sur le dernier choix (le mode
 joué en dernier, puis sa carte) : pour rejouer, Entrée, Entrée.
 

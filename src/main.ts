@@ -70,6 +70,8 @@ async function boot(): Promise<void> {
   editor.onClose = () => menu.showTitle();
   menu.openEditor = () => editor.open();
   menu.returnToEditor = () => editor.returnFromTest();
+  menu.openMap = (id) => editor.openMap(id);
+  menu.playMap = (id) => editor.playMap(id);
   menu.refresh();
   const panels = new SidePanelHost(debugEl, settings);
   const debug = new DebugPanel(panels.add({ id: 'debug', label: 'DEBUG', title: 'F1' }), { game, settings, params, renderer });
