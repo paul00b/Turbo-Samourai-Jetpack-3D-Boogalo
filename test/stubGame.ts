@@ -15,6 +15,8 @@ export interface StubOptions {
   sampleNet?: (state: GameState, slot: number, scratch: PlayerInput[]) => PlayerInput;
   /** Front de la touche « Recommencer » (R), interrogé à chaque frame. */
   restartPressed?: () => boolean;
+  /** Inputs locaux hors ligne (par défaut : aucun bouton). */
+  sample?: (state: GameState, scratch: PlayerInput[]) => PlayerInput[];
 }
 
 export interface StubGame {
@@ -38,7 +40,7 @@ export function makeStubGame(opts: StubOptions = {}): StubGame {
   const deps = {
     renderer: { setLevel: noop, resetCameras: noop, render: noop, screenToWorld: () => false },
     mapper: {
-      sample: () => scratch,
+      sample: (state: GameState) => (opts.sample ? opts.sample(state, scratch) : scratch),
       sampleNet: (state: GameState, _picker: unknown, slot: number) =>
         opts.sampleNet ? opts.sampleNet(state, slot, scratch) : scratch[slot],
       flush: noop,

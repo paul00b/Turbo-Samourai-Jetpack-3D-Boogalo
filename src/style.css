@@ -199,3 +199,20 @@ select.focused, select:focus { border-color: var(--gold); outline: none; }
 .swatch-row span { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .swatch-row i { flex: 0 0 14px; height: 14px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); }
 .fatal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--danger); font-size: 18px; text-align: center; }
+/* Classement mondial : bloc de l'écran de fin, écran Classement. */
+.menu-input.focused { border-color: var(--gold); }
+.lb-block { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 4px; border-top: 1px dashed var(--line); }
+.lb-lead { margin: 0; font-size: 13px; color: var(--text); }
+.lb-name { flex: 0 0 auto; font-family: var(--pixel); font-size: 18px; letter-spacing: 0.04em; }
+.lb-status { margin: 0; font-size: 13px; color: var(--muted); }
+.lb-status.lb-record { color: var(--gold); font-family: var(--pixel); font-size: 15px; letter-spacing: 0.03em; }
+.lb-status.lb-error { color: var(--danger); }
+.lb-table { display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.lb-row { display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: baseline; padding: 4px 8px; border-bottom: 1px solid #1b2030; font-size: 14px; }
+.lb-row.lb-head { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom-color: var(--line); }
+.lb-row.lb-me { background: #1a2233; border-left: 3px solid var(--hero); padding-left: 5px; color: #fff; }
+.lb-row.lb-gap { color: var(--muted); border-bottom: none; }
+.lb-rank { font-family: var(--pixel); color: var(--gold); }
+.lb-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-time { font-family: var(--pixel); font-size: 15px; }
+.lb-saved { flex: 0 0 56px; font-size: 12px; color: var(--muted); }
