@@ -1,13 +1,16 @@
 /**
  * Direction artistique : les règles des planches (design/planches/index.html, « Ce qui garde le
- * perso lisible ») vérifiées sur les 7 cartes et pour chaque thème. Tout ce qui est testé ici est
+ * perso lisible ») vérifiées sur les 6 cartes et pour chaque thème. Tout ce qui est testé ici est
  * pur (aucun Pixi) : moteur pixel, analyse de carte, peintres, pantin, planche de l'ashigaru.
  */
 import { describe, expect, it, vi } from 'vitest';
 
 // Cuisson de cartes jusqu'à 6720 px d'art de large : on laisse le temps aux tests lourds.
 vi.setConfig({ testTimeout: 30000 });
-import { LEVELS, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE } from '../src/sim';
+import { LEVELS, T_BOUNCE, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE, type Level } from '../src/sim';
+import { PAD } from '../src/render/art/themes/floorKit';
+
+const label = (l: Level): string => `${l.mode === 'race' ? 'Course' : 'Arcade'} ${l.name}`;
 import { Buf, C, ca, cb, cr, luma, Particles } from '../src/render/pixel/engine';
 import { analyzeLevel, ART_TILE, exposedFaces, type LevelShape } from '../src/render/art/levelShape';
 import { LEVEL_THEMES, PAINTERS, THEME_IDS, themeIdFor } from '../src/render/art/themes/painters';
@@ -115,7 +118,7 @@ describe('attribution des thèmes', () => {
 
 describe('analyse des cartes', () => {
   for (const level of LEVELS) {
-    it(`${level.name} : sol principal sous le spawn, régions complètes, tronçons du sol classés en sol`, () => {
+    it(`${label(level)} : sol principal sous le spawn, régions complètes, tronçons du sol classés en sol`, () => {
       const shape = analyzeLevel(level);
       expect(shape.floorRow).toBe(Math.floor(level.spawnY / TILE_SIZE) + 1);
       let solids = 0;
@@ -142,7 +145,7 @@ describe('analyse des cartes', () => {
 for (const painter of PAINTER_LIST) {
   describe(`thème ${painter.name}`, () => {
     for (const [id, level] of LEVELS.entries()) {
-      describe(level.name, () => {
+      describe(label(level), () => {
         it('la couche de jeu colle aux collisions : rien hors des tuiles pleines, chaque tuile pleine est peinte', () => {
           const { shape, canvases } = paint(painter, id);
           const tiles = canvases.tiles;
@@ -151,7 +154,7 @@ for (const painter of PAINTER_LIST) {
             for (let x = 0; x < tiles.w; x++) {
               if (tiles.d[y * tiles.w + x] === 0) continue;
               const t = tileAtPx(shape, x, y);
-              if (t !== T_SOLID && t !== T_SLICK) outside++;
+              if (t !== T_SOLID && t !== T_SLICK && t !== T_BOUNCE) outside++;
             }
           }
           expect(outside, 'pixels de tuiles hors des tuiles pleines').toBe(0);
@@ -248,9 +251,41 @@ for (const painter of PAINTER_LIST) {
           }
         });
 
+        it('tremplins : plateau vert vif dans chaque tuile T ; gouffres : le noir monte vers le bord', () => {
+          const { shape, canvases } = paint(painter, id);
+          const tiles = canvases.tiles;
+          let pads = 0;
+          for (const run of shape.pads) {
+            for (let tx = run.x0; tx <= run.x1; tx++) {
+              pads++;
+              let green = 0;
+              for (let x = tx * ART_TILE; x < (tx + 1) * ART_TILE; x++) {
+                for (let y = run.y * ART_TILE; y < run.y * ART_TILE + 3; y++) {
+                  const c = tiles.d[y * tiles.w + x];
+                  if (c === PAD.plateHi || c === PAD.plate) green++;
+                }
+              }
+              expect(green, `tremplin (${tx}, ${run.y})`).toBeGreaterThan(ART_TILE);
+            }
+          }
+          expect(pads).toBe(shape.level.tiles.reduce((n, t) => n + (t === T_BOUNCE ? 1 : 0), 0));
+          if (shape.pits.length === 0) return;
+          const front = canvases.front;
+          expect(front, 'couche avant de l\'abîme').not.toBeNull();
+          const run = shape.pits[0];
+          const x = Math.floor(((run.x0 + run.x1 + 1) * ART_TILE) / 2);
+          const aTop = ca(front!.d[(shape.h - 2) * ART_TILE * front!.w + x]);
+          const aBot = ca(front!.d[(shape.ph - 1) * front!.w + x]);
+          expect(aBot).toBeGreaterThan(200);
+          expect(aBot).toBeGreaterThan(aTop);
+        });
+
         it('aucun décor n\'emploie une teinte réservée aux joueurs, le fond reste sombre', () => {
-          const { canvases } = paint(painter, id);
+          const { shape, canvases } = paint(painter, id);
           const lumas: number[] = [];
+          const g = shape.level.goal;
+          const k = TILE_SIZE / ART_TILE;
+          const inGoal = (x: number): boolean => g !== null && x >= g.x / k - 48 && x <= (g.x + g.w) / k + 48;
           const hits: string[] = [];
           for (const [name, b] of Object.entries(canvases)) {
             if (!b) continue;
@@ -258,7 +293,8 @@ for (const painter of PAINTER_LIST) {
               const c = b.d[i];
               if (c === 0) continue;
               if (RESERVED.has(c & 0xffffff) && hits.length < 5) hits.push(`${name} ${(c & 0xffffff).toString(16)}`);
-              if (name === 'back' && ca(c) === 255 && (i & 7) === 0) lumas.push(luma(c));
+              // L'arrivée est faite pour briller (voile de lumière) : hors du compte.
+              if (name === 'back' && ca(c) === 255 && (i & 7) === 0 && !inGoal(i % b.w)) lumas.push(luma(c));
             }
           }
           expect(hits).toEqual([]);

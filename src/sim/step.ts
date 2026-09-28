@@ -18,8 +18,10 @@ import {
   isSolidTile,
   makeRayHit,
   raycastTiles,
+  BOUNCE_SPEED,
   SPIKE_INSET,
   T_AIR,
+  T_BOUNCE,
   T_SOLID,
   T_SPIKE,
   TILE_SIZE,
@@ -464,8 +466,8 @@ function collideTiles(state: GameState, i: number, level: Level, events: SimEven
   const wasGrounded = pl.grounded;
   pl.grounded = 0;
 
-  // Hors map (ne devrait pas arriver avec la bordure) : mort "void".
-  if (pl.x < -ts * 2 || pl.y < -ts * 2 || pl.x > (level.width + 2) * ts || pl.y > (level.height + 2) * ts) {
+  // Tombé sous la carte (gouffre ouvert en bas) ou sorti par ailleurs : mort "void".
+  if (pl.x < -ts * 2 || pl.y < -ts * 2 || pl.x > (level.width + 2) * ts || pl.y - r > level.height * ts) {
     killPlayer(state, i, 'void', 0, events);
     return;
   }
@@ -478,6 +480,7 @@ function collideTiles(state: GameState, i: number, level: Level, events: SimEven
     let bestPen = 0;
     let bestNx = 0;
     let bestNy = 0;
+    let bestT = T_AIR;
     for (let ty = minTy; ty <= maxTy; ty++) {
       for (let tx = minTx; tx <= maxTx; tx++) {
         const t = tileAt(level, tx, ty);
@@ -530,6 +533,7 @@ function collideTiles(state: GameState, i: number, level: Level, events: SimEven
           bestPen = pen;
           bestNx = nx;
           bestNy = ny;
+          bestT = t;
         }
       }
     }
@@ -541,6 +545,12 @@ function collideTiles(state: GameState, i: number, level: Level, events: SimEven
     if (vn < 0) {
       const impact = -vn;
       pl.lastImpact = impact;
+      // Tremplin, par le dessus : relance verticale fixe, jamais mortel (même en tombant de haut).
+      if (bestT === T_BOUNCE && bestNy < -0.7) {
+        pl.vy = -BOUNCE_SPEED;
+        emit(events, state, 'bounce', i, pl.x, pl.y + r, { value: impact });
+        return;
+      }
       if (impact > p.wallDeathSpeed) {
         killPlayer(state, i, 'wall', impact, events);
         return;
@@ -706,7 +716,7 @@ function updateEnemies(state: GameState, level: Level): void {
     const tyFeet = Math.floor((e.y + e.h / 2 + 2) / ts);
     const ahead = tileAt(level, tx, tyMid);
     const ground = tileAt(level, tx, tyFeet);
-    if (ahead !== T_AIR || ground === T_AIR || ground === T_SPIKE) e.dir = -e.dir;
+    if (ahead !== T_AIR || ground === T_AIR || ground === T_SPIKE || ground === T_BOUNCE) e.dir = -e.dir;
     else e.x = nx;
   }
 }

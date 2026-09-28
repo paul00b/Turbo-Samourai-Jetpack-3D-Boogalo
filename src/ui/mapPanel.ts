@@ -2,7 +2,7 @@
  * Onglet CARTES : les 4 difficultés avec un aperçu dessiné (minimap 1 px/tuile) et application à chaud.
  * Le sélecteur "en partie" vit ici ; le menu ne garde que le choix d'avant-partie.
  */
-import { getLevel, LEVEL_INFOS, LEVEL_MODE_LABEL, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE, type Level, type LevelMode } from '../sim';
+import { getLevel, LEVEL_INFOS, LEVEL_MODE_LABEL, T_BOUNCE, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE, type Level, type LevelMode } from '../sim';
 import type { Game } from '../app/game';
 import type { SettingsStore } from '../io/settings';
 import { clear, h } from './dom';
@@ -17,6 +17,7 @@ const COLOR_AIR = '#141920';
 const COLOR_SOLID = '#3e4757';
 const COLOR_SLICK = '#274a70';
 const COLOR_SPIKE = '#d94848';
+const COLOR_BOUNCE = '#9fe04a';
 const COLOR_SPAWN = '#5ae08a';
 const COLOR_ENEMY = '#c74b4b';
 const COLOR_GOAL = '#5ae08a';
@@ -33,7 +34,7 @@ export function drawLevelPreview(canvas: HTMLCanvasElement, level: Level): void 
     for (let x = 0; x < level.width; x++) {
       const t = level.tiles[y * level.width + x];
       if (t === 0) continue;
-      ctx.fillStyle = t === T_SOLID ? COLOR_SOLID : t === T_SLICK ? COLOR_SLICK : t === T_SPIKE ? COLOR_SPIKE : COLOR_AIR;
+      ctx.fillStyle = t === T_SOLID ? COLOR_SOLID : t === T_SLICK ? COLOR_SLICK : t === T_SPIKE ? COLOR_SPIKE : t === T_BOUNCE ? COLOR_BOUNCE : COLOR_AIR;
       ctx.fillRect(x, y, 1, 1);
     }
   }

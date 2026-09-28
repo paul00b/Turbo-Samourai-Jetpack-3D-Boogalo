@@ -15,6 +15,7 @@ export type SimEventType =
   | 'jetStop'
   | 'overheat'
   | 'land'
+  | 'bounce'
   | 'death'
   | 'respawn'
   | 'enemyKill'

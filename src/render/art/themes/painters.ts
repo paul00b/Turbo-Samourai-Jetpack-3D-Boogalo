@@ -19,10 +19,10 @@ export const PAINTERS: Record<ThemeId, ThemePainter> = {
 };
 
 /**
- * Un thème par carte, dans l'ordre de LEVEL_DEFS : le port pour les deux cartes d'entrée, la
- * forteresse pour les plus dures, la bambouseraie entre les deux et pour le gouffre.
+ * Un thème par carte, dans l'ordre de LEVEL_DEFS (arcade puis course) : le port pour les cartes
+ * faciles, la bambouseraie pour les difficiles, la forteresse de braise pour les horribles.
  */
-export const LEVEL_THEMES: readonly ThemeId[] = ['port', 'bamboo', 'forge', 'forge', 'port', 'forge', 'bamboo'];
+export const LEVEL_THEMES: readonly ThemeId[] = ['port', 'bamboo', 'forge', 'port', 'bamboo', 'forge'];
 
 export function themeIdFor(setting: ThemeSetting, levelId: number): ThemeId {
   if (setting !== 'auto') return setting;

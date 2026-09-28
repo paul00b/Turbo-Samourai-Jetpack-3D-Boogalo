@@ -11,6 +11,9 @@ import {
   HOOK_ATTACHED,
   makeInput,
   step,
+  BOUNCE_SPEED,
+  T_AIR,
+  T_BOUNCE,
   T_SOLID,
   TILE_SIZE,
   tileAt,
@@ -32,9 +35,9 @@ function place(state: ReturnType<typeof createInitialState>, tx: number, ty: num
   p.vy = 0;
 }
 
-// Map 0 (facile) : ancrage en (41..43, 20), sol en 30. Debout en (42, 29), on a 9 tuiles de vide au-dessus.
-const UNDER_ANCHOR = { tx: 42, ty: 29 };
-const ANCHOR_ROW = 20;
+// Map 0 (arcade facile) : crochet en (20..24, 48), sol en 58. Debout en (22, 57), 8 tuiles de vide au-dessus.
+const UNDER_ANCHOR = { tx: 22, ty: 57 };
+const ANCHOR_ROW = 48;
 
 describe('physique de base', () => {
   it('le joueur spawn sur du sol et tombe/se pose sans mourir', () => {
@@ -202,5 +205,53 @@ describe('physique de base', () => {
     expect(e2.alive).toBe(1);
     expect(p2.hp).toBe(DEFAULT_PARAMS.maxHp - 1);
     expect(p2.vx).toBeLessThan(0); // repoussé
+  });
+});
+
+describe('bas de carte : tremplins et gouffres', () => {
+  /** Première colonne de la surface du sol (rangée H-2) qui porte la tuile `t`. */
+  function floorColumn(levelId: number, t: number): number {
+    const level = getLevel(levelId);
+    for (let x = 1; x < level.width - 1; x++) if (tileAt(level, x, level.height - 2) === t) return x;
+    throw new Error(`pas de tuile ${t} au sol`);
+  }
+
+  it('se poser sur un tremplin relance vers le haut, sans mourir même en tombant vite', () => {
+    const s = createInitialState(1, 1);
+    const level = getLevel(0);
+    const p = s.players[0];
+    const tx = floorColumn(0, T_BOUNCE) + 1;
+    place(s, tx, level.height - 6);
+    p.vy = DEFAULT_PARAMS.wallDeathSpeed + 50; // au-dessus du seuil de mort d'un sol normal
+    s.params.maxSpeed = DEFAULT_PARAMS.wallDeathSpeed * 2;
+    const ev = run(s, [makeInput()], 12);
+    expect(ev.some((e) => e.type === 'bounce')).toBe(true);
+    expect(ev.some((e) => e.type === 'death')).toBe(false);
+    expect(p.vy).toBeLessThan(-BOUNCE_SPEED * 0.8);
+    // Et on monte vraiment : une quinzaine de tuiles.
+    let top = p.y;
+    for (let t = 0; t < 90; t++) {
+      step(s, [makeInput()], []);
+      top = Math.min(top, p.y);
+    }
+    expect((level.height - 3) * TILE_SIZE - top).toBeGreaterThan(14 * TILE_SIZE);
+  });
+
+  it('tomber dans un gouffre tue et renvoie au début de la carte', () => {
+    const levelId = 1; // arcade difficile : gouffre central
+    const s = createInitialState(1, 1, DEFAULT_PARAMS, levelId);
+    const level = getLevel(levelId);
+    const p = s.players[0];
+    const tx = floorColumn(levelId, T_AIR) + 2;
+    expect(tileAt(level, tx, level.height - 1)).toBe(T_AIR);
+    expect(tileAt(level, tx, level.height)).toBe(T_AIR); // sous la carte : du vide, pas un mur
+    place(s, tx, level.height - 4);
+    const ev = run(s, [makeInput()], 60);
+    const death = ev.find((e) => e.type === 'death');
+    expect(death?.cause).toBe('void');
+    expect(p.deaths).toBe(1);
+    const back = ev.find((e) => e.type === 'respawn');
+    expect(back?.x).toBeCloseTo(level.spawnX);
+    expect(back?.y).toBeCloseTo(level.spawnY);
   });
 });

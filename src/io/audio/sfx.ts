@@ -167,6 +167,13 @@ export class Sfx {
     this.noiseBurst(0.06 + 0.06 * k, 0.05 + 0.2 * k, { type: 'lowpass', f0: 300 + 500 * k });
   }
 
+  /** Tremplin : un ressort qui se détend, glissando montant et un claquement de plateau. */
+  bounce(): void {
+    this.tone('sine', 150, 620, 0.2, 0.22);
+    this.tone('triangle', 300, 1240, 0.14, 0.08, { delay: 0.01 });
+    this.noiseBurst(0.04, 0.12, { type: 'bandpass', f0: 1800, q: 2 });
+  }
+
   cutWindow(): void {
     this.tone('square', 1500, 1500, 0.04, 0.1, { filter: 4000 });
   }
@@ -334,6 +341,9 @@ export class Sfx {
           break;
         case 'land':
           this.land(e.value ?? 0);
+          break;
+        case 'bounce':
+          this.bounce();
           break;
         case 'cutWindowOpen':
           this.cutWindow();

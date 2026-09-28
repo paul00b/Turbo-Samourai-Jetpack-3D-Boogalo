@@ -5,6 +5,8 @@ import {
   LEVEL_INFOS,
   makeRayHit,
   raycastTiles,
+  T_AIR,
+  T_BOUNCE,
   T_SOLID,
   T_SPIKE,
   TILE_SIZE,
@@ -14,8 +16,8 @@ import {
 } from '../src/sim';
 
 /**
- * Fraction des positions DEBOUT SUR LE SOL PRINCIPAL (la rangée du spawn) depuis lesquelles un
- * ancrage est atteignable en visant droit en haut. Proxy pessimiste : en jeu on vise en diagonale.
+ * Fraction des positions DEBOUT SUR LE SOL (la rangée du spawn) depuis lesquelles un ancrage est
+ * atteignable en visant droit en haut. Proxy pessimiste : en jeu on vise en diagonale.
  */
 function groundAnchorCoverage(level: Level): number {
   const hit = makeRayHit();
@@ -23,7 +25,7 @@ function groundAnchorCoverage(level: Level): number {
   let tested = 0;
   let reachable = 0;
   for (let tx = 1; tx < level.width - 1; tx++) {
-    if (tileAt(level, tx, ty) !== 0 || !isSolidTile(tileAt(level, tx, ty + 1))) continue; // trou ou mur
+    if (tileAt(level, tx, ty) !== T_AIR || !isSolidTile(tileAt(level, tx, ty + 1))) continue; // trou ou mur
     tested++;
     const ox = tx * TILE_SIZE + TILE_SIZE / 2;
     const oy = ty * TILE_SIZE + TILE_SIZE / 2;
@@ -33,19 +35,30 @@ function groundAnchorCoverage(level: Level): number {
   return tested === 0 ? 0 : reachable / tested;
 }
 
+/** Surface du sol (rangée H-2). */
+const floorRow = (level: Level): number => level.height - 2;
+
+/** Part du sol qui tue (pics ou gouffre). */
+function deadlyFloor(level: Level): number {
+  let n = 0;
+  for (let x = 1; x < level.width - 1; x++) {
+    const t = tileAt(level, x, floorRow(level));
+    if (t === T_SPIKE || t === T_AIR) n++;
+  }
+  return n / (level.width - 2);
+}
+
+const byMode = (mode: 'kills' | 'race'): Level[] => LEVELS.filter((l) => l.mode === mode);
+
 describe('level design', () => {
-  it('les deux familles sont déclarées dans l\'ordre : éliminations puis chronos', () => {
-    expect(LEVELS).toHaveLength(7);
-    expect(LEVEL_INFOS.map((i) => i.name)).toEqual([
-      'Facile', 'Normale', 'Difficile', 'Horrible', 'Sprint', 'Autoroute', 'Gouffre',
-    ]);
-    expect(LEVEL_INFOS.map((i) => i.mode)).toEqual([
-      'kills', 'kills', 'kills', 'kills', 'race', 'race', 'race',
-    ]);
-    expect(LEVEL_INFOS.map((i) => i.id)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  it('deux familles de trois cartes, dans l\'ordre : arcade puis course, de la plus facile à la plus dure', () => {
+    expect(LEVELS).toHaveLength(6);
+    expect(LEVEL_INFOS.map((i) => i.name)).toEqual(['Facile', 'Difficile', 'Horrible', 'Facile', 'Difficile', 'Horrible']);
+    expect(LEVEL_INFOS.map((i) => i.mode)).toEqual(['kills', 'kills', 'kills', 'race', 'race', 'race']);
+    expect(LEVEL_INFOS.map((i) => i.id)).toEqual([0, 1, 2, 3, 4, 5]);
   });
 
-  it('seules les cartes chrono ont une arrivée, et elle est loin devant le spawn', () => {
+  it('seules les cartes course ont une arrivée, et elle est loin devant le spawn', () => {
     for (const level of LEVELS) {
       if (level.mode === 'kills') {
         expect(level.goal, `${level.name} ne devrait pas avoir d'arrivée`).toBeNull();
@@ -53,62 +66,114 @@ describe('level design', () => {
       }
       const goal = level.goal;
       expect(goal, `${level.name} : arrivée manquante`).not.toBeNull();
-      // L'arrivée est à droite, et la course fait au moins 200 tuiles.
       expect(goal!.x).toBeGreaterThan(level.spawnX + 200 * TILE_SIZE);
       expect(goal!.x + goal!.w).toBeLessThanOrEqual(level.width * TILE_SIZE);
-      expect(goal!.h).toBeGreaterThan(4 * TILE_SIZE); // franchissable sans viser au pixel
+      // L'arrivée barre toute la hauteur jouable : on la franchit par n'importe quelle voie.
+      expect(goal!.h).toBeGreaterThan(level.height * TILE_SIZE * 0.6);
     }
   });
 
-  it('les cartes chrono sont nettement plus longues que hautes', () => {
-    for (const level of LEVELS) {
-      if (level.mode !== 'race') continue;
-      expect(level.width / level.height).toBeGreaterThan(8);
+  it('les cartes course sont longues, mais pas des couloirs : plus verticales qu\'avant', () => {
+    for (const level of byMode('race')) {
+      expect(level.width / level.height).toBeGreaterThan(5);
+      expect(level.height).toBeGreaterThanOrEqual(44);
+    }
+    for (const level of byMode('kills')) expect(level.height).toBeGreaterThanOrEqual(56);
+  });
+
+  it('la difficulté monte avec la part de sol mortel', () => {
+    for (const mode of ['kills', 'race'] as const) {
+      const [f, d, h] = byMode(mode).map(deadlyFloor);
+      expect(f).toBeLessThan(0.12);
+      expect(d).toBeGreaterThan(f);
+      expect(h).toBeGreaterThan(d);
+      expect(h).toBeGreaterThan(0.35);
     }
   });
 
   for (const level of LEVELS) {
-    describe(level.name, () => {
-      it('lignes de largeur constante, bords pleins', () => {
+    describe(`${level.mode === 'race' ? 'Course' : 'Arcade'} ${level.name}`, () => {
+      it('lignes de largeur constante, bords pleins (sauf les gouffres en bas)', () => {
         expect(level.tiles).toHaveLength(level.width * level.height);
-        for (let x = 0; x < level.width; x++) expect(isSolidTile(tileAt(level, x, level.height - 1))).toBe(true);
+        for (let x = 0; x < level.width; x++) expect(isSolidTile(tileAt(level, x, 0))).toBe(true);
         for (let y = 0; y < level.height; y++) {
           expect(isSolidTile(tileAt(level, 0, y))).toBe(true);
           expect(isSolidTile(tileAt(level, level.width - 1, y))).toBe(true);
         }
       });
 
-      it('le spawn est au sol, dans le vide, loin des pics', () => {
+      it('le bas est plat : sol, pics, tremplins ou gouffre ouvert, rien d\'autre', () => {
+        const F = floorRow(level);
+        const B = level.height - 1;
+        let gaps = 0;
+        for (let x = 1; x < level.width - 1; x++) {
+          const top = tileAt(level, x, F);
+          const bottom = tileAt(level, x, B);
+          if (top === T_AIR) {
+            // Gouffre : ouvert jusqu'en bas, donc on tombe hors de la carte.
+            expect(bottom, `colonne ${x}`).toBe(T_AIR);
+            gaps++;
+            continue;
+          }
+          expect([T_SOLID, T_SPIKE, T_BOUNCE], `colonne ${x}`).toContain(top);
+          expect(bottom, `colonne ${x}`).toBe(T_SOLID);
+        }
+        // Sous la carte, c'est le vide (et pas un mur invisible).
+        expect(tileAt(level, 5, level.height)).toBe(T_AIR);
+        if (level.name === 'Horrible') expect(gaps).toBeGreaterThan(10);
+      });
+
+      it('le spawn est debout sur le sol, loin des pics et des gouffres', () => {
         const tx = Math.floor(level.spawnX / TILE_SIZE);
         const ty = Math.floor(level.spawnY / TILE_SIZE);
-        expect(tileAt(level, tx, ty)).toBe(0);
-        expect(isSolidTile(tileAt(level, tx, ty + 1))).toBe(true);
-        // Aucun pic à moins de 8 tuiles : on ne meurt pas en posant le pied par terre.
-        for (let y = ty - 8; y <= ty + 8; y++) {
-          for (let x = tx - 8; x <= tx + 8; x++) expect(tileAt(level, x, y)).not.toBe(T_SPIKE);
+        expect(ty).toBe(floorRow(level) - 1);
+        expect(tileAt(level, tx, ty)).toBe(T_AIR);
+        expect(tileAt(level, tx, ty + 1)).toBe(T_SOLID);
+        for (let y = ty - 8; y <= ty + 1; y++) {
+          for (let x = tx - 3; x <= tx + 3; x++) {
+            expect(tileAt(level, x, y)).not.toBe(T_SPIKE);
+            if (y === ty + 1 && x > 0 && x < level.width - 1) expect(tileAt(level, x, y), `sol en ${x}`).toBe(T_SOLID);
+          }
         }
       });
 
       it('debout au sol, on trouve un ancrage au-dessus de soi (grappin court)', () => {
-        // Rampe de difficulté, mesurée en visant droit en haut depuis le sol principal.
-        const min: Record<string, number> = {
-          Facile: 0.45, Normale: 0.35, Difficile: 0.2, Horrible: 0.15,
-          Sprint: 0.25, Autoroute: 0.18, Gouffre: 0.08,
-        };
-        expect(min[level.name], `seuil manquant pour ${level.name}`).toBeDefined();
+        // Rampe de difficulté, mesurée en visant droit en haut depuis le sol.
+        const min: Record<string, number> = { Facile: 0.4, Difficile: 0.25, Horrible: 0.1 };
         expect(groundAnchorCoverage(level)).toBeGreaterThan(min[level.name]);
+        // Et depuis le spawn, un ancrage est à portée dans un cône vers le haut.
+        const hit = makeRayHit();
+        let found = false;
+        for (let a = -170; a <= -10 && !found; a += 2) {
+          const r = (a * Math.PI) / 180;
+          raycastTiles(level, level.spawnX, level.spawnY, Math.cos(r), Math.sin(r), DEFAULT_PARAMS.hookMaxLength, hit);
+          if (hit.hit && hit.tile === T_SOLID && hit.y < level.spawnY - TILE_SIZE) found = true;
+        }
+        expect(found, 'aucun ancrage à portée du spawn').toBe(true);
       });
 
-      it('les pics restent au fond, jamais sur la ligne de jeu', () => {
-        const spikes: number[] = [];
+      it('pics et tremplins reposent sur du plein, les tremplins ont de l\'air au-dessus', () => {
         for (let y = 0; y < level.height; y++) {
-          for (let x = 0; x < level.width; x++) if (tileAt(level, x, y) === T_SPIKE) spikes.push(y);
+          for (let x = 0; x < level.width; x++) {
+            const t = tileAt(level, x, y);
+            if (t !== T_SPIKE && t !== T_BOUNCE) continue;
+            expect(tileAt(level, x, y + 1), `${t === T_SPIKE ? 'pic' : 'tremplin'} en (${x}, ${y})`).toBe(T_SOLID);
+            if (t === T_BOUNCE) for (let k = 1; k <= 6; k++) expect(tileAt(level, x, y - k), `air au-dessus du tremplin (${x}, ${y})`).toBe(T_AIR);
+          }
         }
-        if (spikes.length === 0) return; // Facile : zéro pic
-        const spawnRow = Math.floor(level.spawnY / TILE_SIZE);
-        // Tous les pics sont au moins 5 tuiles sous le sol principal (le niveau du spawn).
-        expect(Math.min(...spikes)).toBeGreaterThan(spawnRow + 5);
       });
+
+      if (level.mode === 'kills') {
+        it('les ennemis sont posés sur du sol sûr, et assez nombreux', () => {
+          expect(level.enemies.length).toBeGreaterThanOrEqual(6);
+          for (const e of level.enemies) {
+            const tx = Math.floor(e.x / TILE_SIZE);
+            const ty = Math.floor(e.y / TILE_SIZE);
+            expect(tileAt(level, tx, ty), `ennemi en (${tx}, ${ty})`).toBe(T_AIR);
+            expect(isSolidTile(tileAt(level, tx, ty + 1)), `sous l'ennemi (${tx}, ${ty})`).toBe(true);
+          }
+        });
+      }
     });
   }
 });

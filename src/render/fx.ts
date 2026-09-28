@@ -64,6 +64,9 @@ export class Fx {
         case 'respawn':
           this.burst(e.x, e.y, 14, 120, PLAYER_COLORS[e.player] ?? 0xffffff, 0.4, 2);
           break;
+        case 'bounce':
+          this.burst(e.x, e.y, 10, 260, 0x9fe04a, 0.3, 2);
+          break;
         default:
           break;
       }

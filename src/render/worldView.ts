@@ -8,6 +8,7 @@ import {
   HOOK_ATTACHED,
   HOOK_FLYING,
   SPIKE_INSET,
+  T_BOUNCE,
   T_SLICK,
   T_SOLID,
   T_SPIKE,
@@ -35,6 +36,7 @@ const COLOR_SLICK = 0x274a70;
 const COLOR_SLICK_EDGE = 0x4f8fd1;
 const COLOR_SPIKE_BASE = 0x2a1d22;
 const COLOR_SPIKE = 0xd94848;
+const COLOR_BOUNCE = 0x9fe04a;
 const COLOR_ENEMY = 0xc74b4b;
 const COLOR_ROPE = 0xdde3ea;
 const COLOR_GOAL = 0x5ae08a;
@@ -139,6 +141,14 @@ export class WorldView {
             const bx = px + i * ts;
             g.poly([bx, py + ts, bx + ts / 4, py + 2, bx + ts / 2, py + ts]).fill(COLOR_SPIKE);
             g.poly([bx + ts / 2, py + ts, bx + (3 * ts) / 4, py + 2, bx + ts, py + ts]).fill(COLOR_SPIKE);
+          }
+        } else if (t === T_BOUNCE) {
+          // Tremplin : boîtier sombre, plateau vert, chevron qui monte.
+          g.rect(px, py + ts * 0.35, w, ts * 0.65).fill(0x2b303b);
+          g.rect(px + 1, py, w - 2, ts * 0.22).fill(COLOR_BOUNCE);
+          for (let i = 0; i < run; i++) {
+            const bx = px + i * ts;
+            g.poly([bx + ts * 0.3, py + ts * 0.85, bx + ts / 2, py + ts * 0.5, bx + ts * 0.7, py + ts * 0.85]).fill(COLOR_BOUNCE);
           }
         }
         x += run;

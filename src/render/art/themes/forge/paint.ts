@@ -30,6 +30,7 @@ import {
 } from '../paintKit';
 import type { LevelCanvases, PropAnim, PropInstance } from '../types';
 import { K } from './palette';
+import { paintAbyss, paintPads } from '../floorKit';
 
 const T = ART_TILE;
 const TAU = Math.PI * 2;
@@ -943,6 +944,8 @@ export function paintForge(shape: LevelShape, out: LevelCanvases): PropInstance[
   paintPitLights(shape, props);
   paintSolids(shape, out.tiles);
   paintSpikes(shape, out.hazards);
+  paintPads(shape, out.tiles);
+  paintAbyss(shape, out.front);
   return props;
 }
 

@@ -13,7 +13,7 @@ thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 255 tests : déterminisme, rollback, physique, réseau, garde-fou statique, direction artistique
+npm test             # 292 tests : déterminisme, rollback, physique, réseau, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
@@ -35,7 +35,11 @@ src/app      Orchestration : Game (le seul endroit où les couches se touchent) 
   du seuil, pics, ennemis, respawn instantané dans le même tick.
 - **Mort au mur** : seuil à 2510 px/s sur la composante normale à l'impact (chute libre de ~55 tuiles),
   juste sous la vitesse max de 2600 px/s : seuls les impacts presque à fond tuent.
-  En dessous, on rebondit. Les pics tuent quelle que soit la vitesse, d'où leur cantonnement à la cave.
+  En dessous, on rebondit. Les pics tuent quelle que soit la vitesse.
+- **Bas de carte** : le vide sous la carte est un gouffre (`tileAt` renvoie du vide sous la dernière
+  rangée) : tomber dedans tue (`void`) et renvoie au spawn. Un **tremplin** (`T`) est un plein non
+  accrochable : s'y poser par le dessus fixe `vy = -BOUNCE_SPEED` (1500 px/s, ~19 tuiles de montée),
+  jamais mortel même en tombant de très haut, et émet l'événement `bounce` (son, étincelles vertes).
 - **Grappin** : par défaut on reste accroché tant que le bouton est maintenu, la corde se rétracte
   automatiquement pendant ce maintien, et relâcher lâche (`holdToAttach`). La rétraction s'arrête à
   120 px de l'ancre (`minRopeLength`, ~4 tuiles) : on reste suspendu sous elle, sans s'y coller. La touche reel dédiée reste
@@ -69,7 +73,7 @@ src/app      Orchestration : Game (le seul endroit où les couches se touchent) 
 5. Aucune valeur ne dépend du deltaTime réel : le loop ne fait qu'appeler `step` N fois.
 
 Vérification cross-navigateur : bouton **Auto-test 1000 ticks** du panneau de debug. Il rejoue un
-scénario scripté et affiche un hash. Le hash de référence est `60453604` (test `empreinte de référence`,
+scénario scripté et affiche un hash. Le hash de référence est `6e7bd88d` (test `empreinte de référence`,
 identique sous Node/V8 et dans Chromium). Lance-le dans Firefox et Safari : il doit être identique. Si tu
 modifies la physique, mets à jour `GOLDEN_HASH` dans `test/determinism.test.ts` dans le même commit.
 
@@ -193,8 +197,8 @@ défaut**, avec les mesures du HUD (fps, ticks, rendu) : **Paramètres › Outil
 ou **F1** (DEBUG), **F5** (CARTES), **F7** (BUILDS). Recliquer sur l'onglet actif referme. L'onglet
 ouvert et l'affichage des outils sont persistés.
 
-**CARTES** (`src/ui/mapPanel.ts`) : les 4 difficultés avec un **aperçu** dessiné (minimap 1 px par
-tuile : murs, surfaces lisses, pics, spawn, ennemis), la taille, et un bouton **Appliquer** qui
+**CARTES** (`src/ui/mapPanel.ts`) : les 6 cartes avec un **aperçu** dessiné (minimap 1 px par
+tuile : murs, surfaces lisses, pics, tremplins, spawn, ennemis), la taille, et un bouton **Appliquer** qui
 relance la partie sur cette carte sans passer par le menu. C'est le sélecteur *en partie* ; les
 écrans **Course** et **Arcade** du menu choisissent avant de lancer.
 
@@ -232,46 +236,63 @@ Boutons **Test rollback** (rewind 60 ticks + re-sim, compare le hash au live) et
 
 ## Les niveaux
 
-`src/sim/level.ts`, quatre tableaux de lignes en haut du fichier (tuiles de 32 px), éditables à la main :
+`src/sim/level.ts`, six tableaux de lignes en haut du fichier (tuiles de 32 px), éditables à la main :
 
 ```
 #  mur plein accrochable      =  mur plein NON accrochable (le grappin échoue)
-^  pics (mort quelle que soit la vitesse)      .  vide      S  spawn
+^  pics (mort quelle que soit la vitesse)    T  tremplin (relance vers le haut)
+.  vide (ouvert jusqu'en bas : gouffre)      S  spawn      F  arrivée (course)
 e  ennemi statique            p  ennemi en patrouille lente
 ```
 
-Deux familles, distinguées par `level.mode` et regroupées dans le menu comme dans l'onglet CARTES.
+Deux familles de trois cartes (**Facile**, **Difficile**, **Horrible**), distinguées par `level.mode` et
+regroupées dans le menu comme dans l'onglet CARTES. Un thème par difficulté : port, bambouseraie, forge.
 
-**Arcade** (`mode: 'kills'`) : vider le stock d'ennemis termine la manche.
-
-| Carte | Taille | Idée |
-|---|---|---|
-| **Facile** · Dojo | 112 × 34 | Trois rangées d'ancrages tous les 9 tuiles, sol continu, zéro pic. |
-| **Normale** · Chantier | 132 × 40 | Quatre trous vers la cave, pics au fond de deux d'entre elles, un plafond lisse. |
-| **Difficile** · Usine | 144 × 44 | Ancrages tous les 14 tuiles, longs plafonds lisses, piliers lisses, cave piégée, puits de sortie. |
-| **Horrible** · Broyeur | 156 × 48 | Ancrages tous les 19 tuiles, plafond lisse quasi partout, cave entièrement piégée. |
-
-**Course** (`mode: 'race'`) : cartes longues et horizontales, il faut atteindre l'**arrivée** (tuiles
-`F`, zone verte tout à droite). La toucher fige le chrono. Les ennemis n'y sont que des obstacles.
+**Arcade** (`mode: 'kills'`) : arènes hautes et symétriques, vider le stock d'ennemis termine la manche.
 
 | Carte | Taille | Idée |
 |---|---|---|
-| **Sprint** | 300 × 26 | Ligne droite, sol continu, ancrages tous les 9 tuiles, aucun piège. |
-| **Autoroute** | 360 × 30 | Six trous vers la cave (pics au fond de trois), plafonds lisses : il faut arriver lancé. |
-| **Gouffre** | 420 × 34 | Sept trous larges, cave entièrement piégée, ancrages tous les 17 tuiles, piliers lisses. |
+| **Facile** · Le port | 96 × 60 | Deux entrepôts (on démarre sous le hall), une grue au centre, balcons et quais. Un seul tapis de pics, deux tremplins. 6 ennemis. |
+| **Difficile** · La bambouseraie | 104 × 64 | Colonnes de bambou lisses à nœuds accrochables, gouffre central sous un pont suspendu, pagode sous le plafond. 9 ennemis. |
+| **Horrible** · La forge | 110 × 68 | Douves de pics et de vide, deux îlots-tremplins, donjon lisse à halls traversants, tours de guet à alcôves, crochets minuscules. 9 ennemis. |
+
+**Course** (`mode: 'race'`) : cartes longues, il faut atteindre l'**arrivée** (colonne `F` qui barre toute
+la hauteur, tout à droite). La toucher fige le chrono. Chaque carte enchaîne des sections à plusieurs voies :
+
+- **Pont** : voie basse sous le tablier (plafond accrochable, sol piégé), voie haute entre le tablier et un
+  toit, voie des toits sous des contrepoids suspendus. Un tremplin à l'entrée lance vers la voie haute.
+- **Tour** crénelée du sol à k=30 : par-dessus (champ de tremplins, ancrages d'approche) ou par la porte
+  (facile) / une chatière piégée (difficile).
+- **Slalom** : stalactites et stalagmites alternées ; chaque stalactite est percée d'une fenêtre, la ligne
+  droite pour qui ose.
+- **Tunnel** : trois voies superposées (dessous, dedans, au-dessus).
+- **Gouffre** : plus de sol, des îlots-tremplins et des contrepoids petits et espacés.
+
+| Carte | Taille | Enchaînement |
+|---|---|---|
+| **Facile** | 300 × 48 | Départ, pont, tour (porte ouverte), slalom, tunnel, arrivée. Presque aucun piège. |
+| **Difficile** | 340 × 48 | Départ, slalom, gouffre (pics), pont, tour, tunnel. Plafonds et faces lisses par tronçons. |
+| **Horrible** | 380 × 48 | Départ, tunnel, gouffre (vide), slalom, tour, pont, gouffre. Le sol tue presque partout. |
 
 Sélecteur de carte avant partie dans les écrans **Course** et **Arcade** du menu, et en partie dans
 l'onglet **CARTES** (F5).
 Le choix est persisté (`settings.levelId`) et la sim référence le niveau par `state.levelId`.
 
-Trois règles de level design communes, vérifiées par `test/levels.test.ts` :
+Règles de level design, vérifiées par `test/levels.test.ts` :
 
-1. La rangée d'ancrages la plus basse est à 10 tuiles du sol, soit ~272 px : **accrochable debout, sans
-   sauter** (le grappin fait 420 px).
-2. Les pics ne sont jamais sur la ligne de jeu : ils vivent au fond de la cave, 6 à 8 tuiles sous le sol
-   principal. Tomber dans un trou est un détour, pas une mort.
-3. La difficulté monte par l'espacement des ancrages et la surface lisse (`=`), pas par les pics. Couverture
-   mesurée en visant droit en haut depuis le sol : 51 / 41 / 24 / 20 % en arcade, 31 / 23 / 11 % en course.
+1. **Le bas est plat** (rangées H-2 et H-1), sans cave : du sol surtout, et par tronçons des pics, du vide
+   (colonne ouverte jusqu'en bas) ou des tremplins. Pics et vide tuent : retour au début de la carte.
+2. **La difficulté monte par la part de sol mortel** : 9 / 22 / 76 % en arcade, 3 / 26 / 40 % en course.
+   S'y ajoutent l'espacement et la largeur des ancrages et les surfaces lisses (`=`).
+3. **Debout au sol, un ancrage est à portée** (12 tuiles au plus au-dessus, grappin 420 px), et depuis le
+   spawn il y en a toujours un dans le cône vers le haut. Couverture mesurée en visant droit en haut
+   depuis le sol : 74 / 33 / 15 % en arcade, 48 / 29 / 17 % en course.
+4. Pics et tremplins reposent sur du plein, les tremplins ont de l'air au-dessus, les ennemis sont posés
+   sur du sol et jamais entre deux créneaux.
+
+Faisabilité : chaque carte a été jouée par un bot d'exploration (Go-Explore) branché sur la vraie sim.
+Il finit les trois courses (13 à 23 s de jeu sur sa meilleure trajectoire) et nettoie chaque arène
+d'arcade en une seule partie.
 
 ## Objectif, compteur d'ennemis et chrono
 
@@ -323,10 +344,12 @@ première touche.
 - `test/determinism.test.ts` : deux runs identiques, découpage temporel indifférent, empreinte de référence, coût par tick.
 - `test/snapshot.test.ts` : identité sérialisation, clone complet, reprise depuis snapshot, rollback 60 ticks, input corrigé.
 - `test/physics.test.ts` : accroche et contrainte, rétraction auto/relâche/détache, chauffe et reprise, mort au mur
-  au-dessus du seuil seulement, ennemis (kill traversant vs repoussée).
-- `test/levels.test.ts` : les 7 cartes parsent, bords pleins, spawn au sol et loin des pics, ancrages
-  atteignables depuis le sol, pics cantonnés à la cave, arrivée présente et lointaine sur les seules
-  cartes de course, ratio largeur/hauteur des courses.
+  au-dessus du seuil seulement, ennemis (kill traversant vs repoussée), tremplin (relance, jamais mortel),
+  gouffre (mort `void`, retour au spawn).
+- `test/levels.test.ts` : 3 + 3 cartes dans l'ordre, bords pleins, bas plat (sol, pics, tremplins ou
+  gouffre ouvert), part de sol mortel croissante avec la difficulté, spawn au sol loin des dangers,
+  ancrages atteignables depuis le sol et le spawn, pics et tremplins posés sur du plein, ennemis sur du
+  sol, arrivée présente, lointaine et pleine hauteur sur les seules cartes de course.
 - `test/netcode.test.ts` : deux `Game` complets reliés par un lien simulé (latence, gigue), les états
   confirmés convergent, le rollback se déclenche vraiment, l'input local est figé par tick, un
   changement de params de l'hôte s'applique au même tick des deux côtés (y compris quand l'ordre
@@ -346,13 +369,14 @@ première touche.
   arcade ni en pause ; les deux modes du menu ; outils de debug masqués par défaut ; rappel de la
   bonne touche dans le HUD (clavier ou manette).
 - `test/art.test.ts` : la direction artistique, sous Node. Il couvre le moteur pixel (format des couleurs,
-  alpha des calques, double contour, particules), l'attribution des thèmes et l'analyse des 7 cartes.
+  alpha des calques, double contour, particules), l'attribution des thèmes et l'analyse des 6 cartes.
   Pour chaque thème et chaque carte, il vérifie les règles des planches :
   - la couche de jeu colle aux collisions : rien hors des tuiles pleines, chaque tuile pleine peinte ;
   - les tuiles accrochables exposées ont une arête claire, et les tuiles lisses des reflets froids ;
   - les pointes sont rouges et chaque danger ressort de son sol ;
   - aucune teinte des joueurs n'apparaît dans le décor, et le décor arrière reste sombre ;
-  - les accessoires restent dans la carte.
+  - les accessoires restent dans la carte ;
+  - chaque tremplin a son plateau vert, et l'abîme noircit vers le bord des gouffres.
 
   S'y ajoutent le pantin (pieds posés, teintes réservées, deux cordes, écharpe stable à pleine vitesse),
   l'animation des cordes (vol à la vitesse des planches, étincelles à l'arrivée, retour d'un raté, corde
@@ -443,17 +467,19 @@ ne cache jamais un danger, et ce qui passe devant s'écarte du perso.
 
 **Thèmes** (`src/render/art/themes/`). Chaque niveau des planches est devenu un thème capable d'habiller
 n'importe quelle carte. Il se compose d'un peintre pur (`paint.ts`, testé sous Node), qui cuit les calques à
-partir de l'analyse de la carte (`levelShape.ts` : régions, faces exposées, sol principal, cave, blocs
+partir de l'analyse de la carte (`levelShape.ts` : régions, faces exposées, sol principal, tremplins, gouffres, blocs
 flottants, pics, arrivée), et d'un runtime Pixi par vue (`runtime.ts` : fond vivant, parallaxe
 horizontale et verticale, météo).
 
 | Thème | Cartes (auto) | Accrochable | Lisse | Mortel | Fond vivant |
 |---|---|---|---|---|---|
-| **Port d'Umibozu** | Facile, Sprint | bois : pontons, défenses, solives, poutres de cargaison sur poulies | pierre mouillée | pieux dans l'eau noire | orage à double éclair, jonques, mouettes, Umibozu qui suit le perso des yeux et frappe l'eau, mer calculée par pixel |
-| **Forteresse de braise** | Difficile, Horrible, Autoroute | rempart à arêtes chaudes, poutres cerclées et échafaudages pendus à des chaînes | obsidienne à reflets violets | pics de fer sur fosses de lave | volcans et éruptions, oni de basalte, ville et château en feu, flèches enflammées, brume de chaleur (fond seulement) |
-| **Bambouseraie maudite** | Normale, Gouffre | pierre moussue : linteaux, planches liées aux bambous, kasagi | laque noire | épines | étoiles, lune, ryū de jade, cascade, bambous qui ploient, lucioles, hitodama, brume maudite (sous les épines) |
+| **Port d'Umibozu** | Facile (arcade, course) | bois : pontons, défenses, solives, poutres de cargaison sur poulies | pierre mouillée | pieux dans l'eau noire | orage à double éclair, jonques, mouettes, Umibozu qui suit le perso des yeux et frappe l'eau, mer calculée par pixel |
+| **Forteresse de braise** | Horrible (arcade, course) | rempart à arêtes chaudes, poutres cerclées et échafaudages pendus à des chaînes | obsidienne à reflets violets | pics de fer sur fosses de lave | volcans et éruptions, oni de basalte, ville et château en feu, flèches enflammées, brume de chaleur (fond seulement) |
+| **Bambouseraie maudite** | Difficile (arcade, course) | pierre moussue : linteaux, planches liées aux bambous, kasagi | laque noire | épines | étoiles, lune, ryū de jade, cascade, bambous qui ploient, lucioles, hitodama, brume maudite (sous les épines) |
 
-Les caves ont leur propre décor (dessous du ponton, cachot voûté, ruines à arcades). L'arrivée des cartes
+Tremplins et gouffres sont peints pareil dans tous les thèmes (`themes/floorKit.ts`) : plateau vert sur
+ressorts et chevrons qui montent (le vert n'appartient à aucun décor ni joueur), abîme qui noircit devant
+les acteurs avec une brume froide. L'arrivée des cartes
 chrono est un torii propre à chaque thème, sous un voile de lumière. Le thème se force dans le panneau
 (DEBUG, section Rendu). La lave et les fosses ne sont peintes que sur les tuiles `^` : un sol sans pics
 reste lisiblement sûr.
@@ -465,7 +491,7 @@ changement de thème. Le panneau affiche ces chronos en direct.
 
 **Ajouter un thème** : un dossier `src/render/art/themes/<id>/` avec `palette.ts`, `paint.ts` et
 `painter.ts` purs (aucun import de Pixi), plus `runtime.ts` et `index.ts`, puis l'inscrire dans
-`painters.ts` et `index.ts`. `test/art.test.ts` le vérifie aussitôt sur les 7 cartes.
+`painters.ts` et `index.ts`. `test/art.test.ts` le vérifie aussitôt sur les 6 cartes.
 
 **Modes de rendu** (panneau DEBUG, section Rendu, ou **F8**) : **Jeu** ; **Valeurs** (six niveaux de gris :
 le perso doit rester la forme la plus nette) ; **Couche de jeu** (décor coupé, arrivée marquée : ce qui

@@ -30,6 +30,7 @@ import {
 } from '../paintKit';
 import type { LevelCanvases, PropAnim, PropInstance } from '../types';
 import { K } from './palette';
+import { paintAbyss, paintPads } from '../floorKit';
 
 const T = ART_TILE;
 const C_WHITE: Color = 0xffffffff;
@@ -476,6 +477,8 @@ export function paintPort(shape: LevelShape, out: LevelCanvases): PropInstance[]
   paintGoal(shape, out.back, props);
   paintSolids(shape, out.tiles);
   paintSpikes(shape, out.hazards);
+  paintPads(shape, out.tiles);
+  paintAbyss(shape, out.front);
   return props;
 }
 

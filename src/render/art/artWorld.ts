@@ -15,6 +15,7 @@ import { RopeBank, type RopeContext } from './ropeFx';
 import { chunkTextures, destroyChunks, refreshTexture, subTexture, textureFromBuf, type Chunk } from './textures';
 import type { ThemeModule } from './themes/runtime';
 import type { PropInstance } from './themes/types';
+import { PAD } from './themes/floorKit';
 
 export interface PropTextures {
   frames: Texture[];
@@ -34,6 +35,7 @@ export interface LevelArt {
 
 const GOLD: readonly Color[] = [C('#fff3c4'), C('#f0bf55'), C('#b88a36')];
 const WHITE: readonly Color[] = [C('#ffffff'), C('#dfe9f2')];
+const PAD_SPARKS: readonly Color[] = [PAD.plateHi, PAD.plate, PAD.plateDk];
 
 export class ArtWorld {
   level: Level | null = null;
@@ -177,6 +179,14 @@ export class ArtWorld {
           for (let k = 0; k < n; k++) {
             const s = k % 2 === 0 ? 1 : -1;
             P.spawn(x + s * (1 + Math.random() * 3), y + r, s * (20 + Math.random() * 40), -8 - Math.random() * 18, 0.35 + Math.random() * 0.2, dust, 60, 4, 1);
+          }
+          break;
+        }
+        case 'bounce': {
+          // Le plateau claque : étincelles vertes qui partent vers le haut et sur les côtés.
+          for (let k = 0; k < 12; k++) {
+            const s = k % 2 === 0 ? 1 : -1;
+            P.spawn(x + s * Math.random() * 8, y, s * (20 + Math.random() * 60), -60 - Math.random() * 90, 0.3 + Math.random() * 0.25, PAD_SPARKS, 220, 2, 1);
           }
           break;
         }

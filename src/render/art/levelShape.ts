@@ -2,11 +2,13 @@
  * Lecture d'une carte pour l'habiller : régions de tuiles, faces exposées, sol principal, cave,
  * blocs flottants, pics, arrivée. Pur (aucune dépendance au rendu), donc testable sous Node.
  *
- * Les planches sont des scènes composées à la main ; le jeu, lui, a 7 cartes en tuiles. Chaque
+ * Les planches sont des scènes composées à la main ; le jeu, lui, a 6 cartes en tuiles. Chaque
  * thème peint donc à partir de cette analyse, avec la grammaire commune :
  * arête claire = accrochable (#), reflets obliques froids = lisse (=), pointe rouge = mortel (^).
+ * Les tremplins (T) et les gouffres (colonnes ouvertes en bas) sont peints par floorKit, pareil
+ * dans tous les thèmes : pour les peintres, un tremplin est du vide.
  */
-import { T_AIR, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE, type Level } from '../../sim';
+import { T_AIR, T_BOUNCE, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE, type Level } from '../../sim';
 
 /** Taille d'une tuile en pixels d'art (1 px d'art = 2 px monde). */
 export const ART_TILE = 16;
@@ -57,6 +59,10 @@ export interface LevelShape {
   bottoms: Run[];
   /** Suites de pics, par rangée. */
   spikes: Run[];
+  /** Suites de tremplins, par rangée. */
+  pads: Run[];
+  /** Gouffres : suites de colonnes vides sur la dernière rangée (on y tombe hors de la carte). */
+  pits: Run[];
   /** Tuiles d'ennemis (colonne, rangée) pour éviter d'y poser des accessoires. */
   enemyTiles: { tx: number; ty: number }[];
 }
@@ -141,6 +147,18 @@ export function analyzeLevel(level: Level): LevelShape {
   const tops: Run[] = [];
   const bottoms: Run[] = [];
   const spikes: Run[] = [];
+  const pads: Run[] = [];
+  const pits: Run[] = [];
+  for (let x = 0; x < w; ) {
+    if (tiles[(h - 1) * w + x] !== T_AIR) {
+      x++;
+      continue;
+    }
+    let x1 = x;
+    while (x1 + 1 < w && tiles[(h - 1) * w + x1 + 1] === T_AIR) x1++;
+    pits.push({ x0: x, x1, y: h - 1, type: T_AIR, region: -1 });
+    x = x1 + 1;
+  }
   for (let y = 0; y < h; y++) {
     let x = 0;
     while (x < w) {
@@ -177,10 +195,21 @@ export function analyzeLevel(level: Level): LevelShape {
       }
       x++;
     }
+    x = 0;
+    while (x < w) {
+      if (tAt(x, y) === T_BOUNCE) {
+        let x1 = x;
+        while (x1 + 1 < w && tAt(x1 + 1, y) === T_BOUNCE) x1++;
+        pads.push({ x0: x, x1, y, type: T_BOUNCE, region: -1 });
+        x = x1 + 1;
+        continue;
+      }
+      x++;
+    }
   }
 
   const enemyTiles = level.enemies.map((e) => ({ tx: Math.floor(e.x / TILE_SIZE), ty: Math.floor(e.y / TILE_SIZE) }));
-  return { ...shapeBase, floorRow, spawnTx, spawnTy, regions, regionOf, tops, bottoms, spikes, enemyTiles };
+  return { ...shapeBase, floorRow, spawnTx, spawnTy, regions, regionOf, tops, bottoms, spikes, pads, pits, enemyTiles };
 }
 
 /** Région de la tuile (ou null). */
@@ -200,8 +229,9 @@ export function exposedFaces(shape: LevelShape, tx: number, ty: number): number 
   return m;
 }
 
-/** Le spawn, les ennemis et l'arrivée gardent un peu d'air : pas d'accessoire dessus. */
+/** Le spawn, les ennemis, l'arrivée et les tremplins gardent un peu d'air : pas d'accessoire dessus. */
 export function nearGameplay(shape: LevelShape, tx: number, ty: number, radius = 2): boolean {
+  for (const p of shape.pads) if (tx >= p.x0 - radius && tx <= p.x1 + radius && ty >= p.y - radius - 3 && ty <= p.y + 1) return true;
   if (Math.abs(tx - shape.spawnTx) <= radius + 1 && Math.abs(ty - shape.spawnTy) <= radius) return true;
   for (const e of shape.enemyTiles) if (Math.abs(tx - e.tx) <= radius && Math.abs(ty - e.ty) <= radius) return true;
   const g = shape.level.goal;
