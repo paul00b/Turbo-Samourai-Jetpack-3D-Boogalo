@@ -1,16 +1,17 @@
 /**
  * Direction artistique : les règles des planches (design/planches/index.html, « Ce qui garde le
- * perso lisible ») vérifiées sur les 6 cartes et pour chaque thème. Tout ce qui est testé ici est
+ * perso lisible ») vérifiées sur toutes les cartes et pour chaque thème. Tout ce qui est testé ici est
  * pur (aucun Pixi) : moteur pixel, analyse de carte, peintres, pantin, planche de l'ashigaru.
  */
 import { describe, expect, it, vi } from 'vitest';
 
-// Cuisson de cartes jusqu'à 6720 px d'art de large : on laisse le temps aux tests lourds.
+// Cuisson de cartes jusqu'à 6080 px d'art de large (380 tuiles) : on laisse le temps aux tests lourds.
 vi.setConfig({ testTimeout: 30000 });
-import { LEVELS, T_BOUNCE, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE, type Level } from '../src/sim';
+import { BIOMES, LEVEL_DEFS, LEVEL_INFOS, LEVELS, T_BOUNCE, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE, type Level } from '../src/sim';
 import { PAD } from '../src/render/art/themes/floorKit';
 
-const label = (l: Level): string => `${l.mode === 'race' ? 'Course' : 'Arcade'} ${l.name}`;
+/** « Course Port d'Umibozu · Facile » : plusieurs cartes portent la même difficulté. */
+const label = (l: Level): string => `${l.mode === 'race' ? 'Course' : 'Arcade'} ${LEVEL_INFOS[LEVELS.indexOf(l)]?.title ?? l.name}`;
 import { Buf, C, ca, cb, cr, luma, Particles } from '../src/render/pixel/engine';
 import { analyzeLevel, ART_TILE, exposedFaces, type LevelShape } from '../src/render/art/levelShape';
 import { LEVEL_THEMES, PAINTERS, THEME_IDS, themeIdFor } from '../src/render/art/themes/painters';
@@ -107,6 +108,11 @@ describe('attribution des thèmes', () => {
     }
     // Les trois niveaux des planches sont joués.
     for (const id of THEME_IDS) expect(LEVEL_THEMES).toContain(id);
+  });
+
+  it('le thème d\'une carte est celui de son biome, et le biome porte le nom du thème', () => {
+    for (const [i, d] of LEVEL_DEFS.entries()) expect(LEVEL_THEMES[i]).toBe(d.biome);
+    for (const b of BIOMES) expect(PAINTERS[b.id].name).toBe(b.name);
   });
 
   it('aucun thème ne reprend une teinte réservée aux joueurs (rim, halo, poussière)', () => {

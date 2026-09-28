@@ -143,6 +143,26 @@ body.debug-open #hud, body.debug-open #menu { right: 360px; }
 .mymap-row > .menu-btn { flex: 0 0 auto; padding: 8px 14px; font-size: 15px; }
 .map-name { font-size: 18px; }
 .map-sub { font-family: var(--body); font-size: 12px; color: var(--muted); }
+/* Sélecteur de course : les biomes en grand (vignette peinte par le thème), puis la difficulté. */
+.biome-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 4px; }
+.menu-btn.biome-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 10px 12px; }
+.biome-art { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 2px; background: #07090f; }
+.biome-card.focused .biome-art { border-color: var(--gold); }
+.biome-name { font-size: 18px; letter-spacing: 0.05em; color: #fff; text-shadow: 0 2px 0 #000; }
+.biome-card.focused .biome-name { color: var(--gold); }
+.biome-lead { font-family: var(--body); font-size: 12px; line-height: 1.45; color: var(--muted); }
+.biome-tiers { display: flex; gap: 6px; flex-wrap: wrap; }
+.biome-banner .biome-art { aspect-ratio: 4 / 1; object-fit: cover; object-position: 50% 70%; }
+/* Paliers : les couleurs sémantiques du HUD (vert, or, rouge). */
+.tier { font-family: var(--pixel); font-size: 12px; letter-spacing: 0.04em; padding: 1px 6px; border: 1px solid currentColor; border-radius: 2px; }
+.tier-0 { color: var(--killer); }
+.tier-1 { color: var(--gold); }
+.tier-2 { color: var(--lethal); }
+.map-head { display: flex; align-items: baseline; gap: 10px; }
+.map-head .map-name { flex: 1; min-width: 0; }
+.map-head .map-size { margin-left: auto; }
+.map-size { font-family: var(--body); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) { .biome-cards { grid-template-columns: 1fr; } .biome-card .biome-art { aspect-ratio: 3 / 1; object-fit: cover; } }
 .devices-note { font-size: 12px; }
 .menu-group { margin: 10px 0 2px; font-family: var(--pixel); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); border-bottom: 1px solid var(--line); padding-bottom: 4px; }
 .bind-table { display: flex; flex-direction: column; gap: 6px; }

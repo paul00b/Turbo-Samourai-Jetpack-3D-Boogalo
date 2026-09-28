@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BIOMES,
   DEFAULT_PARAMS,
+  DIFFICULTY_NAMES,
+  levelsIn,
   LEVEL_DEFS,
   LEVELS,
   LEVEL_INFOS,
@@ -53,11 +56,23 @@ function deadlyFloor(level: Level): number {
 const byMode = (mode: 'kills' | 'race'): Level[] => LEVELS.filter((l) => l.mode === mode);
 
 describe('level design', () => {
-  it('deux familles de trois cartes, dans l\'ordre : arcade puis course, de la plus facile à la plus dure', () => {
-    expect(LEVELS).toHaveLength(6);
-    expect(LEVEL_INFOS.map((i) => i.name)).toEqual(['Facile', 'Difficile', 'Horrible', 'Facile', 'Difficile', 'Horrible']);
-    expect(LEVEL_INFOS.map((i) => i.mode)).toEqual(['kills', 'kills', 'kills', 'race', 'race', 'race']);
-    expect(LEVEL_INFOS.map((i) => i.id)).toEqual([0, 1, 2, 3, 4, 5]);
+  it('les ids publiés ne bougent pas : arcade 0-2, premières courses 3-5, puis les courses ajoutées', () => {
+    expect(LEVELS).toHaveLength(12);
+    expect(LEVEL_INFOS.map((i) => i.id)).toEqual(LEVEL_INFOS.map((_, k) => k));
+    const firstSix = LEVEL_INFOS.slice(0, 6).map((i) => `${i.mode}:${i.biome}:${i.name}`);
+    expect(firstSix).toEqual([
+      'kills:port:Facile', 'kills:bamboo:Difficile', 'kills:forge:Horrible',
+      'race:port:Facile', 'race:bamboo:Difficile', 'race:forge:Horrible',
+    ]);
+    for (const i of LEVEL_INFOS) expect(i.name).toBe(DIFFICULTY_NAMES[i.difficulty]);
+  });
+
+  it('chaque biome a une arène et ses trois courses, Facile, Difficile et Horrible', () => {
+    expect(BIOMES.map((b) => b.id)).toEqual(['port', 'bamboo', 'forge']);
+    for (const b of BIOMES) {
+      expect(levelsIn('kills', b.id)).toHaveLength(1);
+      expect(levelsIn('race', b.id).map((i) => i.difficulty)).toEqual([0, 1, 2]);
+    }
   });
 
   it('seules les cartes course ont une arrivée, et elle est loin devant le spawn', () => {
@@ -84,17 +99,24 @@ describe('level design', () => {
   });
 
   it('la difficulté monte avec la part de sol mortel', () => {
-    for (const mode of ['kills', 'race'] as const) {
-      const [f, d, h] = byMode(mode).map(deadlyFloor);
-      expect(f).toBeLessThan(0.12);
-      expect(d).toBeGreaterThan(f);
-      expect(h).toBeGreaterThan(d);
-      expect(h).toBeGreaterThan(0.35);
+    // Arcade : une arène par biome, de la plus facile à la plus dure.
+    const [f, d, h] = byMode('kills').map(deadlyFloor);
+    expect(f).toBeLessThan(0.12);
+    expect(d).toBeGreaterThan(f);
+    expect(h).toBeGreaterThan(d);
+    expect(h).toBeGreaterThan(0.35);
+    // Course : dans chaque biome, et au même palier d'un biome à l'autre.
+    for (const b of BIOMES) {
+      const [cf, cd, ch] = levelsIn('race', b.id).map((i) => deadlyFloor(LEVELS[i.id]));
+      expect(cf, `${b.name} Facile`).toBeLessThan(0.12);
+      expect(cd, `${b.name} Difficile`).toBeGreaterThan(Math.max(cf, 0.2));
+      expect(cd, `${b.name} Difficile`).toBeLessThan(0.35);
+      expect(ch, `${b.name} Horrible`).toBeGreaterThan(Math.max(cd, 0.35));
     }
   });
 
   for (const [id, level] of LEVELS.entries()) {
-    describe(`${level.mode === 'race' ? 'Course' : 'Arcade'} ${level.name}`, () => {
+    describe(`${level.mode === 'race' ? 'Course' : 'Arcade'} ${LEVEL_INFOS[id].title}`, () => {
       it('respecte les règles de level design (celles que l\'éditeur affiche)', () => {
         // Bords pleins, bas plat (sol, pics, tremplins ou gouffre ouvert), pics et tremplins posés,
         // ennemis posés, spawn unique et au sol, ancrage à portée du spawn, arrivée en course.

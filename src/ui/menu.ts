@@ -1,7 +1,9 @@
 /**
  * Menus (DOM) : menu principal (course ou arcade), choix de la carte, paramètres, contrôles +
  * remapping, pause, fin de niveau. Navigables au clavier et à la manette via MenuInput + FocusNav.
- * Lancer une partie : le mode, puis la carte (le dernier choix a le focus : Entrée, Entrée).
+ * Lancer une partie : le mode, puis la carte (le dernier choix a le focus : Entrée, Entrée). En course,
+ * la carte se choisit en deux temps : le biome, puis la difficulté ; la carte survolée s'affiche
+ * derrière le menu (Game.preview).
  */
 import type { Game, Phase } from '../app/game';
 import type { AudioEngine } from '../io/audio/audioEngine';
@@ -14,7 +16,7 @@ import {
   type GamepadControl,
 } from '../io/input/bindings';
 import { GamepadCapture, type GamepadManager } from '../io/input/gamepad';
-import { DT, getLevel, LEVEL_INFOS, LEVEL_MODE_LABEL, type LevelMode } from '../sim';
+import { BIOMES, biomeInfo, DT, getLevel, LEVEL_INFOS, LEVEL_MODE_LABEL, levelsIn, levelsOf, type BiomeId, type LevelInfo, type LevelMode } from '../sim';
 import type { NetGame } from '../net/netGame';
 import { normalizeCode } from '../net/protocol';
 import type { KeyboardMouse } from '../io/input/keyboardMouse';
@@ -26,8 +28,9 @@ import { formatTime } from './hud';
 import { FocusNav, MenuInput, type MenuAction } from './focusNav';
 import { LeaderboardClient } from '../io/leaderboard';
 import { LeaderboardUi, type BtnFactory } from './leaderboard';
+import { biomeVignette } from './biomeArt';
 
-export type ScreenId = 'title' | 'race' | 'kills' | 'net' | 'controls' | 'settings' | 'pause' | 'complete' | 'board' | 'mymaps';
+export type ScreenId = 'title' | 'race' | 'biome' | 'kills' | 'net' | 'controls' | 'settings' | 'pause' | 'complete' | 'board' | 'mymaps';
 
 /** Ce que promet chaque mode, sur sa carte du menu principal et en tête de son écran. */
 const MODE_LEAD: Record<LevelMode, string> = {
@@ -75,6 +78,9 @@ export class Menu {
   /** Écran Classement ouvert depuis le menu principal : il propose les deux modes. */
   private boardFromTitle = false;
   returnToEditor: (() => void) | null = null;
+  /** Biome ouvert à l'étape 2 du sélecteur de course. */
+  private biome: BiomeId = 'port';
+  private previewTimer = 0;
 
   constructor(
     private readonly root: HTMLElement,
@@ -82,6 +88,7 @@ export class Menu {
   ) {
     this.input = new MenuInput(deps.pads);
     this.nav.onMove = () => deps.sfx.menuMove();
+    this.nav.onFocus = (el) => this.previewFocused(el);
     clear(root);
     const kb = (navigator as Navigator & { keyboard?: { getLayoutMap?: () => Promise<Map<string, string>> } }).keyboard;
     if (kb?.getLayoutMap) {
@@ -179,6 +186,11 @@ export class Menu {
         el = this.buildTitle();
         break;
       case 'race':
+        el = this.buildRaceBiomes();
+        break;
+      case 'biome':
+        el = this.buildBiome();
+        break;
       case 'kills':
         el = this.buildMode(id);
         break;
@@ -258,6 +270,7 @@ export class Menu {
         { class: `menu-btn mode-card mode-${mode}`, 'data-nav-row': 'modes', 'data-nav-default': mode === lastMode },
       );
     };
+    this.schedulePreview(s.levelId);
     return h(
       'div',
       { class: 'menu-screen title-screen' },
@@ -284,25 +297,15 @@ export class Menu {
     );
   }
 
-  /**
-   * Un mode : le nombre de joueurs, puis une carte = une partie. Depuis l'écran de fin (en jeu),
-   * choisir une carte relance tout de suite sur celle-ci.
-   */
-  private buildMode(mode: LevelMode): HTMLElement {
+  /** Choisir une carte depuis la pause ou l'écran de fin relance la partie tout de suite dessus. */
+  private inGame(): boolean {
+    return this.stack.includes('pause') || this.stack.includes('complete');
+  }
+
+  /** 1 ou 2 joueurs (mis à jour sur place, le focus reste sur le sélecteur) et qui joue avec quoi. */
+  private playersBlock(inGame: boolean): (HTMLElement | null)[] {
     const s = this.deps.settings.get();
-    const inGame = this.stack.includes('pause') || this.stack.includes('complete');
-    const maps = LEVEL_INFOS.filter((l) => l.mode === mode);
-    const focusId = maps.some((m) => m.id === s.levelId) ? s.levelId : maps[0]?.id;
-    const list = maps.map((info) => {
-      const b = this.btn([h('span', { class: 'map-name', text: info.name }), h('span', { class: 'map-sub', text: info.subtitle })], () => this.launch(info.id, inGame), {
-        class: 'menu-btn map-btn',
-        'data-nav-default': info.id === focusId,
-      });
-      b.classList.toggle('selected', info.id === s.levelId);
-      return b;
-    });
     const devices = h('p', { class: 'menu-note devices-note', text: this.devicesText() });
-    // 1 ou 2 joueurs : mis à jour sur place, le focus reste sur le sélecteur.
     const counts = ([1, 2] as const).map((n) => {
       const b = this.btn(`${n} joueur${n > 1 ? 's' : ''}`, () => {
         this.deps.settings.update((st) => (st.playerCount = n));
@@ -312,25 +315,136 @@ export class Menu {
       b.classList.toggle('selected', s.playerCount === n);
       return b;
     });
-    const lead = mode === 'race' ? `${this.restartKeyLabel()} recommence la course à zéro.` : null;
+    return [
+      inGame ? null : h('div', { class: 'menu-row' }, ...counts),
+      inGame ? h('p', { class: 'menu-note', text: 'Choisir une carte relance la partie immédiatement.' }) : devices,
+    ];
+  }
+
+  private boardButton(mode: LevelMode): HTMLButtonElement {
+    return this.btn('Classements', () => {
+      this.boardFromTitle = false;
+      this.boardMode = mode;
+      this.lb.load(this.lb.boardFor(mode, this.deps.game.state.levelId));
+      this.push('board');
+    });
+  }
+
+  /** Une carte de la liste : sa difficulté en étiquette, son biome ou sa taille, sa description. */
+  private mapButton(info: LevelInfo, head: string | null, inGame: boolean, focusId: number | undefined): HTMLButtonElement {
+    const level = getLevel(info.id);
+    const b = this.btn(
+      [
+        h(
+          'span',
+          { class: 'map-head' },
+          head ? h('span', { class: 'map-name', text: head }) : null,
+          h('span', { class: `tier tier-${info.difficulty}`, text: info.name }),
+          h('span', { class: 'map-size', text: `${level.width} × ${level.height}` }),
+        ),
+        h('span', { class: 'map-sub', text: info.subtitle }),
+      ],
+      () => this.launch(info.id, inGame),
+      { class: 'menu-btn map-btn', 'data-nav-default': info.id === focusId, 'data-preview': String(info.id) },
+    );
+    b.classList.toggle('selected', info.id === this.deps.settings.get().levelId);
+    return b;
+  }
+
+  /** Arcade : une arène par biome, de la plus facile à la plus dure. */
+  private buildMode(mode: LevelMode): HTMLElement {
+    const s = this.deps.settings.get();
+    const inGame = this.inGame();
+    const maps = levelsOf(mode);
+    const focusId = maps.some((m) => m.id === s.levelId) ? s.levelId : maps[0]?.id;
+    const list = maps.map((info) => this.mapButton(info, biomeInfo(info.biome).name, inGame, focusId));
     return h(
       'div',
       { class: 'menu-screen' },
       this.panel(
         LEVEL_MODE_LABEL[mode],
-        lead ? h('p', { class: 'menu-note', text: lead }) : null,
-        inGame ? null : h('div', { class: 'menu-row' }, ...counts),
-        inGame ? h('p', { class: 'menu-note', text: 'Choisir une carte relance la partie immédiatement.' }) : devices,
+        ...this.playersBlock(inGame),
         h('div', { class: 'map-list' }, ...list),
-        this.btn('Classements', () => {
-          this.boardFromTitle = false;
-          this.boardMode = mode;
-          this.lb.load(this.lb.boardFor(mode, this.deps.game.state.levelId));
-          this.push('board');
-        }),
+        this.boardButton(mode),
         this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
       ),
     );
+  }
+
+  /** Course, étape 1 : le biome. La carte survolée s'affiche derrière le menu, avec son fond vivant. */
+  private buildRaceBiomes(): HTMLElement {
+    const s = this.deps.settings.get();
+    const inGame = this.inGame();
+    const current = LEVEL_INFOS[s.levelId];
+    const lastBiome: BiomeId = current?.mode === 'race' ? current.biome : BIOMES[0].id;
+    const cards = BIOMES.map((b) => {
+      const maps = levelsIn('race', b.id);
+      const shown = maps.find((m) => m.id === s.levelId) ?? maps[0];
+      const card = this.btn(
+        [
+          biomeVignette(b.id),
+          h('span', { class: 'biome-name', text: b.name }),
+          h('span', { class: 'biome-lead', text: b.lead }),
+          h('span', { class: 'biome-tiers' }, ...maps.map((m) => h('span', { class: `tier tier-${m.difficulty}`, text: m.name }))),
+        ],
+        () => {
+          this.biome = b.id;
+          this.push('biome');
+        },
+        { class: `menu-btn biome-card biome-${b.id}`, 'data-nav-row': 'biomes', 'data-nav-default': b.id === lastBiome, 'data-preview': String(shown.id) },
+      );
+      card.classList.toggle('selected', current?.mode === 'race' && current.biome === b.id);
+      return card;
+    });
+    return h(
+      'div',
+      { class: 'menu-screen wide' },
+      this.panel(
+        'Course',
+        h('p', { class: 'menu-note', text: `${MODE_LEAD.race} Choisis un biome, puis sa difficulté. ${this.restartKeyLabel()} recommence la course à zéro.` }),
+        ...this.playersBlock(inGame),
+        h('div', { class: 'biome-cards' }, ...cards),
+        this.boardButton('race'),
+        this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
+      ),
+    );
+  }
+
+  /** Course, étape 2 : la difficulté, dans le biome choisi. */
+  private buildBiome(): HTMLElement {
+    const s = this.deps.settings.get();
+    const inGame = this.inGame();
+    const b = biomeInfo(this.biome);
+    const maps = levelsIn('race', b.id);
+    const focusId = maps.some((m) => m.id === s.levelId) ? s.levelId : maps[0]?.id;
+    return h(
+      'div',
+      { class: 'menu-screen' },
+      this.panel(
+        `Course · ${b.name}`,
+        h('div', { class: 'biome-banner' }, biomeVignette(b.id)),
+        h('p', { class: 'menu-note', text: b.lead }),
+        inGame ? h('p', { class: 'menu-note', text: 'Choisir une carte relance la partie immédiatement.' }) : null,
+        h('div', { class: 'map-list' }, ...maps.map((info) => this.mapButton(info, null, inGame, focusId))),
+        this.boardButton('race'),
+        this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
+      ),
+    );
+  }
+
+  /** Au menu principal, l'élément focus peut porter une carte à montrer derrière le menu. */
+  private previewFocused(el: HTMLElement | null): void {
+    const id = el?.dataset.preview;
+    if (id !== undefined) this.schedulePreview(Number(id));
+  }
+
+  /** Petit délai : parcourir une liste au clavier ne recuit pas chaque carte traversée. */
+  private schedulePreview(id: number): void {
+    if (this.previewTimer) window.clearTimeout(this.previewTimer);
+    this.previewTimer = window.setTimeout(() => {
+      this.previewTimer = 0;
+      if (this.deps.game.phase === 'menu') this.deps.game.preview(id);
+    }, 140);
   }
 
   /** Mes cartes : les cartes de l'éditeur, à jouer tout de suite ou à modifier. */
@@ -647,7 +761,7 @@ export class Menu {
     const time = formatTime(st.finishTick * DT);
     // Carte perso (éditeur) : pas dans LEVEL_INFOS, on lit la carte elle-même.
     const custom = g.customTest && this.returnToEditor !== null;
-    const info = LEVEL_INFOS[st.levelId] ?? { name: getLevel(st.levelId).name, mode: getLevel(st.levelId).mode };
+    const info = LEVEL_INFOS[st.levelId] ?? { title: getLevel(st.levelId).name, mode: getLevel(st.levelId).mode };
     const race = info?.mode === 'race';
     const perPlayer =
       st.playerCount === 2
@@ -662,8 +776,8 @@ export class Menu {
         h('p', {
           class: 'menu-sub',
           text: race
-            ? `${info?.name ?? ''} bouclée · ${st.kills} ennemi${st.kills > 1 ? 's' : ''} au passage`
-            : `${st.kills} ennemi${st.kills > 1 ? 's' : ''} éliminé${st.kills > 1 ? 's' : ''} · ${info?.name ?? ''}`,
+            ? `${info?.title ?? ''} bouclée · ${st.kills} ennemi${st.kills > 1 ? 's' : ''} au passage`
+            : `${st.kills} ennemi${st.kills > 1 ? 's' : ''} éliminé${st.kills > 1 ? 's' : ''} · ${info?.title ?? ''}`,
         }),
         perPlayer,
         this.lb.completeBlock(this.lbBtn, st.levelId),

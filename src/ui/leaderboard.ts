@@ -5,7 +5,7 @@
  */
 import type { Game } from '../app/game';
 import { UNRANKED_LABEL } from '../app/replayRecorder';
-import { DT, LEVEL_INFOS, LEVEL_MODE_LABEL, type LevelMode, type ReplayData } from '../sim';
+import { BIOMES, biomeInfo, DT, LEVEL_INFOS, LEVEL_MODE_LABEL, levelsIn, levelsOf, type LevelMode, type ReplayData } from '../sim';
 import type { LeaderboardClient } from '../io/leaderboard';
 import { NAME_MAX, type BoardView, type SubmitResult } from '../net/scoresApi';
 import { h } from './dom';
@@ -29,6 +29,8 @@ export class LeaderboardUi {
   private readonly boards = new Map<number, BoardState>();
   /** Carte affichée dans l'écran Classement, par mode. */
   private boardLevel: Partial<Record<LevelMode, number>> = {};
+  /** Le dernier onglet touché était un biome : le focus y reste après le rechargement. */
+  private focusBiomeRow = false;
   /** Appelé quand un résultat réseau arrive : le menu redessine l'écran concerné. */
   onChange: (() => void) | null = null;
 
@@ -188,17 +190,31 @@ export class LeaderboardUi {
           }),
         )
       : null;
-    const maps = LEVEL_INFOS.filter((l) => l.mode === mode);
-    const tabs = maps.map((m) => {
-      const b = btn(m.name, () => {
-        if (this.boardLevel[mode] === m.id) return;
-        this.boardLevel[mode] = m.id;
-        this.load(m.id);
-        this.onChange?.();
-      }, { 'data-nav-group': 'lb-map', 'data-nav-default': m.id === levelId });
-      b.classList.toggle('selected', m.id === levelId);
+    const pick = (id: number, fromBiomeRow: boolean): void => {
+      this.focusBiomeRow = fromBiomeRow;
+      if (this.boardLevel[mode] === id) return;
+      this.boardLevel[mode] = id;
+      this.load(id);
+      this.onChange?.();
+    };
+    const cur = LEVEL_INFOS[levelId];
+    const tab = (label: string, id: number, group: string, selected: boolean, focus: boolean): HTMLButtonElement => {
+      const b = btn(label, () => pick(id, group === 'lb-biome'), { 'data-nav-group': group, 'data-nav-default': focus });
+      b.classList.toggle('selected', selected);
       return b;
-    });
+    };
+    // Course : le biome, puis la difficulté (neuf cartes). Arcade : une arène par biome.
+    const tabs: HTMLElement[] = [];
+    if (mode === 'race' && cur) {
+      tabs.push(h('div', { class: 'menu-row' }, ...BIOMES.map((b) => {
+        const inBiome = levelsIn('race', b.id);
+        const target = inBiome.find((m) => m.difficulty === cur.difficulty) ?? inBiome[0];
+        return tab(b.name, target.id, 'lb-biome', b.id === cur.biome, this.focusBiomeRow && b.id === cur.biome);
+      })));
+      tabs.push(h('div', { class: 'menu-row' }, ...levelsIn('race', cur.biome).map((m) => tab(m.name, m.id, 'lb-map', m.id === levelId, !this.focusBiomeRow && m.id === levelId))));
+    } else {
+      tabs.push(h('div', { class: 'menu-row' }, ...levelsOf(mode).map((m) => tab(biomeInfo(m.biome).name, m.id, 'lb-map', m.id === levelId, m.id === levelId))));
+    }
     const st = this.boards.get(levelId);
     let body: HTMLElement;
     if (!st || st.kind === 'loading') body = h('p', { class: 'lb-status', text: 'Chargement du classement…' });
@@ -213,7 +229,7 @@ export class LeaderboardUi {
         { class: 'menu-panel' },
         h('h2', { class: 'menu-title', text: title }),
         modeTabs,
-        h('div', { class: 'menu-row' }, ...tabs),
+        ...tabs,
         body,
         h('p', { class: 'menu-note', text: this.client.identity.name ? `Tu joues sous le nom « ${this.client.identity.name} ».` : 'Ton pseudo sera demandé à la fin de ta première partie classée.' }),
         btn('Retour', back, { class: 'menu-btn secondary' }),

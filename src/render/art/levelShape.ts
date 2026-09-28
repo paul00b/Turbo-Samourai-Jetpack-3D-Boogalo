@@ -2,7 +2,7 @@
  * Lecture d'une carte pour l'habiller : régions de tuiles, faces exposées, sol principal, cave,
  * blocs flottants, pics, arrivée. Pur (aucune dépendance au rendu), donc testable sous Node.
  *
- * Les planches sont des scènes composées à la main ; le jeu, lui, a 6 cartes en tuiles. Chaque
+ * Les planches sont des scènes composées à la main ; le jeu, lui, a 12 cartes en tuiles. Chaque
  * thème peint donc à partir de cette analyse, avec la grammaire commune :
  * arête claire = accrochable (#), reflets obliques froids = lisse (=), pointe rouge = mortel (^).
  * Les tremplins (T) et les gouffres (colonnes ouvertes en bas) sont peints par floorKit, pareil

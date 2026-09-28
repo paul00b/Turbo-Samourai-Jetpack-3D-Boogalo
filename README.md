@@ -13,7 +13,7 @@ thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 335 tests : déterminisme, rollback, physique, réseau, classement, éditeur, garde-fou statique, direction artistique
+npm test             # 493 tests : déterminisme, rollback, physique, réseau, classement, éditeur, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
@@ -127,6 +127,8 @@ démarre toute seule à 2 joueurs.
   l'état à un tick dont les deux machines ont tous les inputs confirmés : c'est exactement ce que
   vérifie `test/netcode.test.ts`.
 - **La config vient de l'hôte** : seed, carte et params sont envoyés à l'invité à l'arrivée.
+- **Protocole v2** (`PROTOCOL_VERSION`, jeu et relais) : la liste des cartes est passée à 12. Un
+  client v1 est refusé par le relais au lieu de rejoindre une partie sur une autre carte.
 - **Params en cours de partie : datés, décidés par l'hôte.** Les params font partie de l'état simulé,
   donc un changement ne peut pas être immédiat : il prendrait effet à des ticks différents sur les
   deux machines et les ferait diverger. L'hôte diffuse donc *« ces params, au tick T »* avec
@@ -167,12 +169,20 @@ Ce qui manque pour un vrai jeu en ligne : la reconnexion après coupure et la d�
 
 ## Menus
 
-Lancer une partie tient en deux choix. Le **menu principal** propose les deux modes en grand,
+Lancer une partie tient en quelques choix. Le **menu principal** propose les deux modes en grand,
 **Course** (atteindre l'arrivée le plus vite possible) et **Arcade** (éliminer tous les ennemis de la
 carte), puis Classements (les deux modes, carte par carte), Mes cartes (jouer ou modifier ses
-cartes perso), Éditeur, Multijoueur en ligne et Paramètres. Chaque mode ouvre la liste de ses cartes, avec le
-choix 1 ou 2 joueurs : une carte = une partie. Le focus est toujours sur le dernier choix (le mode
-joué en dernier, puis sa carte) : pour rejouer, Entrée, Entrée.
+cartes perso), Éditeur, Multijoueur en ligne et Paramètres. Chaque mode propose le choix 1 ou 2
+joueurs, puis ses cartes : une carte = une partie.
+
+- **Course**, en deux temps : le **biome** (trois grandes cartes, chacune avec une vignette peinte par le
+  peintre de son thème : ses bois, pierres ou mousses, ses pics, son tremplin, ses accessoires, et sa
+  silhouette dans le ciel : les yeux d'Umibozu, le volcan, la lune), puis la **difficulté** (Facile,
+  Difficile, Horrible). La carte survolée s'affiche **derrière le menu**, avec son fond vivant
+  (`Game.preview` : rien n'est enregistré, et rien ne bouge en ligne ou en pleine partie).
+- **Arcade** : ses trois arènes, une par biome.
+- Le focus est toujours sur le dernier choix (le mode joué en dernier, son biome, sa carte) : pour
+  rejouer une course, Entrée, Entrée, Entrée.
 
 - **Échap** en partie : Continuer, Recommencer, Quitter au menu.
 - **R** en course : repart de zéro, chrono compris, sans carton-titre (il ne s'affiche qu'en arrivant
@@ -198,7 +208,7 @@ défaut**, avec les mesures du HUD (fps, ticks, rendu) : **Paramètres › Outil
 ou **F1** (DEBUG), **F5** (CARTES), **F7** (BUILDS). Recliquer sur l'onglet actif referme. L'onglet
 ouvert et l'affichage des outils sont persistés.
 
-**CARTES** (`src/ui/mapPanel.ts`) : les 6 cartes avec un **aperçu** dessiné (minimap 1 px par
+**CARTES** (`src/ui/mapPanel.ts`) : les 12 cartes, rangées par biome, avec un **aperçu** dessiné (minimap 1 px par
 tuile : murs, surfaces lisses, pics, tremplins, spawn, ennemis), la taille, et un bouton **Appliquer** qui
 relance la partie sur cette carte sans passer par le menu. C'est le sélecteur *en partie* ; les
 écrans **Course** et **Arcade** du menu choisissent avant de lancer.
@@ -246,54 +256,75 @@ Boutons **Test rollback** (rewind 60 ticks + re-sim, compare le hash au live) et
 e  ennemi statique            p  ennemi en patrouille lente
 ```
 
-Deux familles de trois cartes (**Facile**, **Difficile**, **Horrible**), distinguées par `level.mode` et
-regroupées dans le menu comme dans l'onglet CARTES. Un thème par difficulté : port, bambouseraie, forge.
+Trois **biomes**, chacun avec son thème (habillage, fond vivant) et ses sections de level design :
+**Port d'Umibozu**, **Bambouseraie maudite**, **Forteresse de braise**. Chaque carte porte son biome et sa
+difficulté (champs `biome` et `difficulty` de `LEVEL_DEFS`) ; son thème en découle (`LEVEL_THEMES`). Les
+ids publiés ne bougent jamais (réglages enregistrés, parties en ligne, copies de l'éditeur) : arcade 0
+à 2, les trois premières courses 3 à 5, les six courses ajoutées 6 à 11. Le menu, l'onglet CARTES et
+les classements rangent par biome puis par difficulté (`levelsOf`, `levelsIn`).
 
-**Arcade** (`mode: 'kills'`) : arènes hautes et symétriques, vider le stock d'ennemis termine la manche.
+**Arcade** (`mode: 'kills'`) : une arène haute et symétrique par biome ; vider le stock d'ennemis termine
+la manche.
 
-| Carte | Taille | Idée |
+| Arène | Taille | Idée |
 |---|---|---|
-| **Facile** · Le port | 96 × 60 | Deux entrepôts (on démarre sous le hall), une grue au centre, balcons et quais. Un seul tapis de pics, deux tremplins. 6 ennemis. |
-| **Difficile** · La bambouseraie | 104 × 64 | Colonnes de bambou lisses à nœuds accrochables, gouffre central sous un pont suspendu, pagode sous le plafond. 9 ennemis. |
-| **Horrible** · La forge | 110 × 68 | Douves de pics et de vide, deux îlots-tremplins, donjon lisse à halls traversants, tours de guet à alcôves, crochets minuscules. 9 ennemis. |
+| **Port d'Umibozu** · Facile | 96 × 60 | Deux entrepôts (on démarre sous le hall), une grue au centre, balcons et quais. Un seul tapis de pics, deux tremplins. 6 ennemis. |
+| **Bambouseraie maudite** · Difficile | 104 × 64 | Colonnes de bambou lisses à nœuds accrochables, gouffre central sous un pont suspendu, pagode sous le plafond. 9 ennemis. |
+| **Forteresse de braise** · Horrible | 110 × 68 | Douves de pics et de vide, deux îlots-tremplins, donjon lisse à halls traversants, tours de guet à alcôves, crochets minuscules. 9 ennemis. |
 
-**Course** (`mode: 'race'`) : cartes longues, il faut atteindre l'**arrivée** (colonne `F` qui barre toute
-la hauteur, tout à droite). La toucher fige le chrono. Chaque carte enchaîne des sections à plusieurs voies :
+**Course** (`mode: 'race'`) : trois courses par biome, **Facile**, **Difficile** et **Horrible**. Il faut
+atteindre l'**arrivée** (colonne `F` qui barre toute la hauteur, tout à droite) ; la toucher fige le
+chrono. Chaque biome a ses sections, en plus des sections communes :
 
-- **Pont** : voie basse sous le tablier (plafond accrochable, sol piégé), voie haute entre le tablier et un
-  toit, voie des toits sous des contrepoids suspendus. Un tremplin à l'entrée lance vers la voie haute.
-- **Tour** crénelée du sol à k=30 : par-dessus (champ de tremplins, ancrages d'approche) ou par la porte
-  (facile) / une chatière piégée (difficile).
-- **Slalom** : stalactites et stalagmites alternées ; chaque stalactite est percée d'une fenêtre, la ligne
-  droite pour qui ose.
-- **Tunnel** : trois voies superposées (dessous, dedans, au-dessus).
-- **Gouffre** : plus de sol, des îlots-tremplins et des contrepoids petits et espacés.
+- **Port d'Umibozu** : **quais** sur pilotis au-dessus de l'eau (gouffres entre les pilotis), **grue** à
+  flèche et crochets pendus, **jonque** à quai (deux mâts à vergues accrochables, coque lisse en
+  difficile), **entrepôt** (toit crénelé en voie haute, mezzanine en voie basse).
+- **Bambouseraie maudite** : **bambous** lisses (`=`) montants et pendus, à nœuds accrochables (tous les
+  4, 7 ou 10 rangs selon la difficulté), **torii** brisés qui flottent dans la brume (on passe dessous
+  ou dessus, tout s'y accroche), **pagode** sous le plafond, à avant-toits et lanternes pendues.
+- **Forteresse de braise** : **remparts** crénelés (porte ouverte en facile, chatière piégée ensuite,
+  faces lisses), **douves** de lave sous des chaînes à crochets minuscules, **cachot** à trois halls
+  traversants (plafonds accrochables, murs lisses), **passerelles** pendues à des chaînes.
+- **Communes** : pont à deux voies, tour, slalom à fenêtres, tunnel à trois voies, gouffre à tremplins.
+  Toutes les courses partent d'un balcon au-dessus du spawn, avec deux contrepoids pour le premier
+  swing.
 
-| Carte | Taille | Enchaînement |
+| Course | Taille | Enchaînement |
 |---|---|---|
-| **Facile** | 300 × 48 | Départ, pont, tour (porte ouverte), slalom, tunnel, arrivée. Presque aucun piège. |
-| **Difficile** | 340 × 48 | Départ, slalom, gouffre (pics), pont, tour, tunnel. Plafonds et faces lisses par tronçons. |
-| **Horrible** | 380 × 48 | Départ, tunnel, gouffre (vide), slalom, tour, pont, gouffre. Le sol tue presque partout. |
+| Port · **Facile** | 300 × 48 | Départ, pont, tour (porte ouverte), slalom, tunnel, arrivée. Presque aucun piège. |
+| Port · **Difficile** | 330 × 48 | Quais sur l'eau, grue, jonque, entrepôt à pics, quais piégés. |
+| Port · **Horrible** | 362 × 48 | Jonque en pleine mer, grue, quais piégés, deux jonques, entrepôt, grue. Presque tout est mer. |
+| Bambouseraie · **Facile** | 300 × 48 | Bambous à nœuds serrés, torii flottants, pagode, slalom, bambous. |
+| Bambouseraie · **Difficile** | 340 × 48 | Départ, slalom, gouffre (pics), pont, tour, tunnel. Plafonds et faces lisses par tronçons. |
+| Bambouseraie · **Horrible** | 370 × 48 | Bambous à nœuds rares sur des épines, torii au-dessus des ravins, slalom, pagode, bambous. |
+| Forteresse · **Facile** | 300 × 48 | Rempart à porte ouverte, passerelles, cachot, remparts, un peu de lave. |
+| Forteresse · **Difficile** | 340 × 48 | Douves de lave, rempart à chatière, passerelles au-dessus du vide, cachot, douves. |
+| Forteresse · **Horrible** | 380 × 48 | Départ, tunnel, gouffre (vide), slalom, tour, pont, gouffre. Le sol tue presque partout. |
 
-Sélecteur de carte avant partie dans les écrans **Course** et **Arcade** du menu, et en partie dans
-l'onglet **CARTES** (F5).
-Le choix est persisté (`settings.levelId`) et la sim référence le niveau par `state.levelId`.
+Sélecteur de carte avant partie dans les écrans **Course** (biome, puis difficulté) et **Arcade** du
+menu, et en partie dans l'onglet **CARTES** (F5). Le choix est persisté (`settings.levelId`) et la sim
+référence le niveau par `state.levelId`.
 
 Règles de level design, vérifiées par `test/levels.test.ts` :
 
 1. **Le bas est plat** (rangées H-2 et H-1), sans cave : du sol surtout, et par tronçons des pics, du vide
    (colonne ouverte jusqu'en bas) ou des tremplins. Pics et vide tuent : retour au début de la carte.
-2. **La difficulté monte par la part de sol mortel** : 9 / 22 / 76 % en arcade, 3 / 26 / 40 % en course.
-   S'y ajoutent l'espacement et la largeur des ancrages et les surfaces lisses (`=`).
+2. **Même palier, même exigence d'un biome à l'autre.** La part de sol mortel monte dans chaque biome :
+   moins de 12 % en facile (~3 %), entre 20 et 35 % en difficile (~27 %), plus de 35 % en horrible
+   (40 à 60 %). En arcade, 9 / 22 / 76 %. S'y ajoutent l'espacement et la largeur des ancrages et les
+   surfaces lisses (`=`).
 3. **Debout au sol, un ancrage est à portée** (12 tuiles au plus au-dessus, grappin 420 px), et depuis le
    spawn il y en a toujours un dans le cône vers le haut. Couverture mesurée en visant droit en haut
-   depuis le sol : 74 / 33 / 15 % en arcade, 48 / 29 / 17 % en course.
+   depuis le sol : au moins 40 / 25 / 10 % (les courses sont vers 50 / 33 / 20 %), 74 / 33 / 15 % en
+   arcade.
 4. Pics et tremplins reposent sur du plein, les tremplins ont de l'air au-dessus, les ennemis sont posés
    sur du sol et jamais entre deux créneaux.
 
-Faisabilité : chaque carte a été jouée par un bot d'exploration (Go-Explore) branché sur la vraie sim.
-Il finit les trois courses (13 à 23 s de jeu sur sa meilleure trajectoire) et nettoie chaque arène
-d'arcade en une seule partie.
+Faisabilité : chaque course a été jouée par un bot d'exploration (Go-Explore : visée sur 13 directions,
+deux grappins, jetpack, états archivés par case de 64 px) branché sur la vraie sim, avec les params par
+défaut. Il finit les neuf courses, en 15 à 28 s de jeu sur sa meilleure trajectoire (Port 15 / 23 / 28 s,
+Bambouseraie 24 / 25 / 28 s, Forteresse 17 / 20 / 23 s). Les arènes d'arcade n'ont pas changé. Un bot
+prouve qu'une carte se termine, pas qu'elle est agréable : le ressenti se règle en jouant.
 
 ## Éditeur de niveaux
 
@@ -386,7 +417,8 @@ tombe.
   top 10 de la carte. Sinon, la raison : hors ligne (bouton pour réessayer), ou **hors classement**
   (params modifiés, 2 joueurs, partie en ligne, plus de 10 minutes).
 - **Écran Classements** : depuis la liste des cartes de chaque mode, une carte après l'autre
-  (gauche/droite), au clavier comme à la manette.
+  (gauche/droite), au clavier comme à la manette. En course, deux rangées : le biome, puis la
+  difficulté.
 
 **Anti-triche : le serveur rejoue la partie.** Le client n'envoie jamais un temps : il envoie le
 replay (`src/sim/replay.ts`), c'est-à-dire la seed, l'empreinte de la carte, l'empreinte des params
@@ -444,10 +476,11 @@ première touche.
   recalculé ; inputs coupés ou en trop, carte ou params différents refusés), handler `/api/scores`
   sur store mémoire (temps annoncé ignoré, meilleur temps conservé, top 10 trié, pseudos, débit),
   store Upstash, enregistrement dans `Game` (replay vérifiable, remise à zéro, hors classement).
-- `test/levels.test.ts` : 3 + 3 cartes dans l'ordre, bords pleins, bas plat (sol, pics, tremplins ou
+- `test/levels.test.ts` : ids publiés stables, un biome = une arène + trois courses, bords pleins, bas plat (sol, pics, tremplins ou
   gouffre ouvert), part de sol mortel croissante avec la difficulté, spawn au sol loin des dangers,
   ancrages atteignables depuis le sol et le spawn, pics et tremplins posés sur du plein, ennemis sur du
-  sol, arrivée présente, lointaine et pleine hauteur sur les seules cartes de course. Les règles
+  sol, arrivée présente, lointaine et pleine hauteur sur les seules cartes de course, sol mortel
+  croissant dans chaque biome et au même palier d'un biome à l'autre. Les règles
   structurelles passent par `validateRows` (`src/sim/levelRules.ts`), le module que l'éditeur affiche.
 - `test/editor.test.ts` : outils de grille (rectangle, ligne, remplissage, spawn unique, copier-coller),
   annuler/refaire, redimensionnement, gabarits valides, chaque preset (dans la grille, miroir compris),
@@ -472,7 +505,7 @@ première touche.
   arcade ni en pause ; les deux modes du menu ; outils de debug masqués par défaut ; rappel de la
   bonne touche dans le HUD (clavier ou manette).
 - `test/art.test.ts` : la direction artistique, sous Node. Il couvre le moteur pixel (format des couleurs,
-  alpha des calques, double contour, particules), l'attribution des thèmes et l'analyse des 6 cartes.
+  alpha des calques, double contour, particules), l'attribution des thèmes (celui du biome) et l'analyse des 12 cartes.
   Pour chaque thème et chaque carte, il vérifie les règles des planches :
   - la couche de jeu colle aux collisions : rien hors des tuiles pleines, chaque tuile pleine peinte ;
   - les tuiles accrochables exposées ont une arête claire, et les tuiles lisses des reflets froids ;
@@ -574,11 +607,11 @@ partir de l'analyse de la carte (`levelShape.ts` : régions, faces exposées, so
 flottants, pics, arrivée), et d'un runtime Pixi par vue (`runtime.ts` : fond vivant, parallaxe
 horizontale et verticale, météo).
 
-| Thème | Cartes (auto) | Accrochable | Lisse | Mortel | Fond vivant |
+| Thème | Cartes | Accrochable | Lisse | Mortel | Fond vivant |
 |---|---|---|---|---|---|
-| **Port d'Umibozu** | Facile (arcade, course) | bois : pontons, défenses, solives, poutres de cargaison sur poulies | pierre mouillée | pieux dans l'eau noire | orage à double éclair, jonques, mouettes, Umibozu qui suit le perso des yeux et frappe l'eau, mer calculée par pixel |
-| **Forteresse de braise** | Horrible (arcade, course) | rempart à arêtes chaudes, poutres cerclées et échafaudages pendus à des chaînes | obsidienne à reflets violets | pics de fer sur fosses de lave | volcans et éruptions, oni de basalte, ville et château en feu, flèches enflammées, brume de chaleur (fond seulement) |
-| **Bambouseraie maudite** | Difficile (arcade, course) | pierre moussue : linteaux, planches liées aux bambous, kasagi | laque noire | épines | étoiles, lune, ryū de jade, cascade, bambous qui ploient, lucioles, hitodama, brume maudite (sous les épines) |
+| **Port d'Umibozu** | son arène et ses trois courses | bois : pontons, défenses, solives, poutres de cargaison sur poulies | pierre mouillée | pieux dans l'eau noire | orage à double éclair, jonques, mouettes, Umibozu qui suit le perso des yeux et frappe l'eau, mer calculée par pixel |
+| **Forteresse de braise** | son arène et ses trois courses | rempart à arêtes chaudes, poutres cerclées et échafaudages pendus à des chaînes | obsidienne à reflets violets | pics de fer sur fosses de lave | volcans et éruptions, oni de basalte, ville et château en feu, flèches enflammées, brume de chaleur (fond seulement) |
+| **Bambouseraie maudite** | son arène et ses trois courses | pierre moussue : linteaux, planches liées aux bambous, kasagi | laque noire | épines | étoiles, lune, ryū de jade, cascade, bambous qui ploient, lucioles, hitodama, brume maudite (sous les épines) |
 
 Tremplins et gouffres sont peints pareil dans tous les thèmes (`themes/floorKit.ts`) : plateau vert sur
 ressorts et chevrons qui montent (le vert n'appartient à aucun décor ni joueur), abîme qui noircit devant
@@ -594,7 +627,7 @@ changement de thème. Le panneau affiche ces chronos en direct.
 
 **Ajouter un thème** : un dossier `src/render/art/themes/<id>/` avec `palette.ts`, `paint.ts` et
 `painter.ts` purs (aucun import de Pixi), plus `runtime.ts` et `index.ts`, puis l'inscrire dans
-`painters.ts` et `index.ts`. `test/art.test.ts` le vérifie aussitôt sur les 6 cartes.
+`painters.ts` et `index.ts`. `test/art.test.ts` le vérifie aussitôt sur les 12 cartes.
 
 **Modes de rendu** (panneau DEBUG, section Rendu, ou **F8**) : **Jeu** ; **Valeurs** (six niveaux de gris :
 le perso doit rester la forme la plus nette) ; **Couche de jeu** (décor coupé, arrivée marquée : ce qui

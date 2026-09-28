@@ -8,7 +8,7 @@ import type { Game } from '../app/game';
 import type { SettingsStore } from '../io/settings';
 import { LEVEL_THEMES, setCustomTheme } from '../render/art/themes/painters';
 import type { ThemeId } from '../render/art/themes/types';
-import { LEVEL_DEFS, parseLevel, setCustomLevel, validateRows, type Level, type LevelIssue } from '../sim';
+import { LEVEL_DEFS, LEVEL_INFOS, parseLevel, setCustomLevel, validateRows, type Level, type LevelIssue } from '../sim';
 import { clear, h } from '../ui/dom';
 import { exportMap, importMap, type MapDoc } from './format';
 import {
@@ -650,11 +650,11 @@ export class LevelEditor {
           class: 'ed-btn',
           type: 'button',
           onclick: () => {
-            const map = this.store.create({ name: this.store.freeName(`${d.mode === 'race' ? 'Course' : 'Arcade'} ${d.name} (copie)`), mode: d.mode, theme: LEVEL_THEMES[i] ?? 'port', rows: d.rows.slice() });
+            const map = this.store.create({ name: this.store.freeName(`${d.mode === 'race' ? 'Course' : 'Arcade'} ${LEVEL_INFOS[i]?.title ?? d.name} (copie)`), mode: d.mode, theme: LEVEL_THEMES[i] ?? 'port', rows: d.rows.slice() });
             this.setMap(map);
             this.closeModal();
           },
-        }, `${d.mode === 'race' ? 'Course' : 'Arcade'} ${d.name}`),
+        }, `${d.mode === 'race' ? 'Course' : 'Arcade'} ${LEVEL_INFOS[i]?.title ?? d.name}`),
       ),
     );
     this.openModal(

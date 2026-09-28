@@ -2,7 +2,7 @@
  * Onglet CARTES : les 4 difficultés avec un aperçu dessiné (minimap 1 px/tuile) et application à chaud.
  * Le sélecteur "en partie" vit ici ; le menu ne garde que le choix d'avant-partie.
  */
-import { getLevel, LEVEL_INFOS, LEVEL_MODE_LABEL, T_BOUNCE, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE, type Level, type LevelMode } from '../sim';
+import { getLevel, LEVEL_INFOS, LEVEL_MODE_LABEL, levelsOf, T_BOUNCE, T_SLICK, T_SOLID, T_SPIKE, TILE_SIZE, type Level, type LevelMode } from '../sim';
 import type { Game } from '../app/game';
 import type { SettingsStore } from '../io/settings';
 import { clear, h } from './dom';
@@ -76,7 +76,7 @@ export class MapPanel {
     );
     this.cards.clear();
     let group: LevelMode | null = null;
-    for (const info of LEVEL_INFOS) {
+    for (const info of [...levelsOf('kills'), ...levelsOf('race')]) {
       if (info.mode !== group) {
         group = info.mode;
         this.panel.append(
@@ -105,7 +105,7 @@ export class MapPanel {
       const card = h(
         'div',
         { class: 'map-card' },
-        h('div', { class: 'map-card-head' }, h('strong', { text: info.name }), h('span', { class: 'debug-unit', text: `${LEVEL_MODE_LABEL[info.mode].toLowerCase()} · ${level.width}×${level.height}` })),
+        h('div', { class: 'map-card-head' }, h('strong', { text: info.title }), h('span', { class: 'debug-unit', text: `${LEVEL_MODE_LABEL[info.mode].toLowerCase()} · ${level.width}×${level.height}` })),
         canvas,
         h('small', { class: 'side-note', text: info.subtitle }),
         h('div', { class: 'debug-row' }, apply, h('span', { class: 'map-current', text: 'en cours' })),
@@ -124,7 +124,7 @@ export class MapPanel {
     this.shown = current;
     for (const [id, card] of this.cards) card.classList.toggle('active', id === current);
     const info = LEVEL_INFOS[current];
-    this.status.textContent = info ? `Carte en cours : ${info.name}` : '';
+    this.status.textContent = info ? `Carte en cours : ${info.title}` : '';
   }
 
   /** Appelé chaque frame par main.ts (la carte peut changer ailleurs : menu, réseau). */

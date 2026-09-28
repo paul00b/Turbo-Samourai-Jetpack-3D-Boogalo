@@ -90,10 +90,11 @@ export class Game {
     });
   }
 
-  newSim(playerCount: number): void {
+  /** Nouvelle sim sur la carte choisie (ou `forced`, pour un aperçu au menu). */
+  newSim(playerCount: number, forced?: number): void {
     const s = this.deps.settings.get();
     this.completeShown = false;
-    const levelId = this.levelOverride ?? clampLevelId(s.levelId);
+    const levelId = forced ?? this.levelOverride ?? clampLevelId(s.levelId);
     this.state = createInitialState(s.seed, playerCount, this.deps.params.get(), levelId);
     this.prev = cloneState(this.state);
     this.recorder.reset(this.state, this.net !== null);
@@ -218,6 +219,18 @@ export class Game {
     this.deps.sfx.silenceLoops();
     this.newSim(this.state.playerCount);
     this.setPhase('menu');
+  }
+
+  /**
+   * Aperçu au menu : montre une carte derrière le menu sans la choisir (le sélecteur de course
+   * affiche le biome survolé, avec son fond vivant). Rien n'est enregistré ; en ligne, pendant le
+   * test d'une carte perso ou hors du menu, on ne touche à rien.
+   */
+  preview(id: number): void {
+    if (this.phase !== 'menu' || this.net || this.levelOverride !== null) return;
+    const levelId = clampLevelId(id);
+    if (levelId === this.state.levelId) return;
+    this.newSim(this.state.playerCount, levelId);
   }
 
   /** Changement de carte : nouvelle sim (la géométrie change), on reste dans la même phase. */

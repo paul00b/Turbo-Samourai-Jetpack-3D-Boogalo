@@ -3,7 +3,7 @@
  * les tests et les outils sous Node peuvent charger. Le registre complet, avec les runtimes, est
  * dans ./index.ts.
  */
-import { CUSTOM_LEVEL_ID } from '../../../sim/level';
+import { CUSTOM_LEVEL_ID, LEVEL_DEFS, type BiomeId } from '../../../sim/level';
 import type { ThemeId, ThemePainter } from './types';
 import { bambooPainter } from './bamboo/painter';
 import { forgePainter } from './forge/painter';
@@ -19,11 +19,11 @@ export const PAINTERS: Record<ThemeId, ThemePainter> = {
   bamboo: bambooPainter,
 };
 
-/**
- * Un thème par carte, dans l'ordre de LEVEL_DEFS (arcade puis course) : le port pour les cartes
- * faciles, la bambouseraie pour les difficiles, la forteresse de braise pour les horribles.
- */
-export const LEVEL_THEMES: readonly ThemeId[] = ['port', 'bamboo', 'forge', 'port', 'bamboo', 'forge'];
+/** Chaque biome de la sim a son thème (même identifiant). */
+const BIOME_THEME: Record<BiomeId, ThemeId> = { port: 'port', bamboo: 'bamboo', forge: 'forge' };
+
+/** Un thème par carte, dans l'ordre de LEVEL_DEFS : celui de son biome. */
+export const LEVEL_THEMES: readonly ThemeId[] = LEVEL_DEFS.map((d) => BIOME_THEME[d.biome]);
 
 /** Thème de la carte perso (choisi dans l'éditeur). */
 let customTheme: ThemeId = 'port';

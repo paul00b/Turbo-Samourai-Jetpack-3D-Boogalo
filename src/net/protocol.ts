@@ -2,7 +2,7 @@
  * Protocole de session. Le serveur (server/index.mjs) ne relaie que des enveloppes : il ne
  * connaît ni la sim, ni les inputs. Tout ce qui est "jeu" passe dans `relay.d` (PeerMsg).
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2; // v2 : 12 cartes (courses par biome)
 
 /** 6 caractères, alphabet sans ambiguïté visuelle (ni O/0, ni I/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

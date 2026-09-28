@@ -76,6 +76,9 @@ export class FocusNav {
   private index = 0;
   private screen: HTMLElement | null = null;
   onMove: (() => void) | null = null;
+  /** Appelé quand l'élément focus change (clavier, manette ou survol) : l'aperçu du menu le suit. */
+  onFocus: ((el: HTMLElement | null) => void) | null = null;
+  private lastFocused: HTMLElement | null = null;
 
   /** Focus initial : le premier [data-nav-default] de l'écran, sinon le premier élément. */
   attach(screen: HTMLElement): void {
@@ -90,6 +93,7 @@ export class FocusNav {
     for (const el of this.items) el.classList.remove('focused');
     this.items = [];
     this.screen = null;
+    this.lastFocused = null;
   }
 
   /** Recalcule la liste (après un changement d'onglet, etc.) en conservant l'élément focus si possible. */
@@ -198,6 +202,10 @@ export class FocusNav {
     const el = this.items[this.index];
     if (el) el.scrollIntoView({ block: 'nearest' });
     if (sound && this.onMove) this.onMove();
+    if (el !== this.lastFocused) {
+      this.lastFocused = el ?? null;
+      this.onFocus?.(this.lastFocused);
+    }
   }
 }
 
