@@ -27,6 +27,7 @@ import type { Renderer } from '../render/renderer';
 import { Fx } from '../render/fx';
 import { TrailBuffer } from '../render/trail';
 import { GameLoop } from './gameLoop';
+import { ReplayRecorder } from './replayRecorder';
 
 export type Phase = 'menu' | 'playing' | 'paused' | 'complete';
 
@@ -58,6 +59,8 @@ export class Game {
   readonly loop = new GameLoop();
   readonly fx = new Fx();
   readonly trails: TrailBuffer[] = [];
+  /** Inputs de la manche en cours, pour le classement (voir ReplayRecorder). */
+  readonly recorder = new ReplayRecorder();
   private readonly events: SimEvent[] = [];
   /** Netcode actif (partie en ligne) ou null (partie locale). */
   net: NetPlay | null = null;
@@ -74,6 +77,7 @@ export class Game {
     for (let i = 0; i < 2; i++) this.trails.push(new TrailBuffer(Math.round(s.debug.trailSeconds * TICK_RATE)));
     this.state = createInitialState(s.seed, s.playerCount, deps.params.get(), clampLevelId(s.levelId));
     this.prev = cloneState(this.state);
+    this.recorder.reset(this.state, false);
     deps.renderer.setLevel(getLevel(this.state.levelId));
     // Les params du panneau de debug sont recopiés en live dans l'état.
     deps.params.subscribe((p) => this.applyParams(p));
@@ -89,6 +93,7 @@ export class Game {
     const levelId = clampLevelId(s.levelId);
     this.state = createInitialState(s.seed, playerCount, this.deps.params.get(), levelId);
     this.prev = cloneState(this.state);
+    this.recorder.reset(this.state, this.net !== null);
     this.deps.renderer.setLevel(getLevel(levelId));
     this.history.clear();
     for (const t of this.trails) t.clear();
@@ -239,6 +244,7 @@ export class Game {
     }
     Object.assign(this.state.params, p);
     Object.assign(this.prev.params, p);
+    this.recorder.checkParams(this.state.params);
   }
 
   /** Tick auquel le prochain changement de params prendra effet (HUD/panneau), -1 si aucun. */
@@ -269,6 +275,7 @@ export class Game {
   private readonly tick = (): boolean => {
     if (this.net) return this.netTick(this.net);
     const inputs = this.deps.mapper.sample(this.state, this.deps.renderer);
+    if (!this.state.finished) this.recorder.record(inputs[0]);
     this.advanceOneTick(inputs);
     return true;
   };

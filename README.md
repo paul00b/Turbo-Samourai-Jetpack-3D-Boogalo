@@ -13,7 +13,7 @@ thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 292 tests : déterminisme, rollback, physique, réseau, garde-fou statique, direction artistique
+npm test             # 310 tests : déterminisme, rollback, physique, réseau, classement, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
@@ -326,6 +326,53 @@ transporté par les messages d'inputs et de params : les messages de la manche p
 vol sont jetés, sinon un input périmé resterait « confirmé » sur le même slot de tick et serait
 rejoué à la place du vrai une minute plus tard.
 
+## Classement mondial
+
+Un classement par carte (Course et Arcade séparés) : le meilleur temps de chaque joueur, top 10
+affiché, et ta place même au-delà. Le temps d'une carte d'arcade est celui où le dernier ennemi
+tombe.
+
+- **Pseudo** : demandé une seule fois, à la fin de ta première partie classée (un pseudo est
+  proposé, validable tel quel à la manette). Il est gardé dans le navigateur avec un identifiant
+  anonyme (uuid, jamais affiché) : deux joueurs peuvent porter le même pseudo sans s'écraser.
+  Modifiable dans **Paramètres** (tes temps sont renommés partout).
+- **Écran de fin** : envoi automatique, puis « nouveau record perso » ou ton record, ta place et le
+  top 10 de la carte. Sinon, la raison : hors ligne (bouton pour réessayer), ou **hors classement**
+  (params modifiés, 2 joueurs, partie en ligne, plus de 10 minutes).
+- **Écran Classements** : depuis la liste des cartes de chaque mode, une carte après l'autre
+  (gauche/droite), au clavier comme à la manette.
+
+**Anti-triche : le serveur rejoue la partie.** Le client n'envoie jamais un temps : il envoie le
+replay (`src/sim/replay.ts`), c'est-à-dire la seed, l'empreinte de la carte, l'empreinte des params
+et les inputs du joueur 1 à chaque tick depuis le tick 0 (RLE des inputs identiques, puis base64 :
+quelques Ko pour une course). La sim étant déterministe, le serveur rejoue ces inputs avec
+`DEFAULT_PARAMS` et retient le `finishTick` qu'il a calculé lui-même. Il refuse une carte différente
+de la sienne, des params non par défaut, une manche qui ne se termine pas pile au dernier input
+(inputs coupés ou rajoutés), un replay illisible ou de plus de 10 minutes. Une carte modifiée change
+d'empreinte, donc de classement : les anciens temps ne s'y mélangent pas.
+
+**Ce qui est classé** : seul, hors ligne, sur une carte officielle, avec les params par défaut du
+début à la fin (`src/app/replayRecorder.ts` enregistre dans `Game` et repart de zéro à chaque
+recommencement ou changement de carte).
+
+**Côté serveur** (`server/scores/`) : un handler pur (`handler.ts`) et deux stores, en mémoire
+(`store.ts`) et Upstash Redis par son API REST (`upstash.ts`, un simple `fetch`, aucune dépendance).
+Un sorted set par empreinte de carte (`lb:v1:<empreinte>`, score = meilleur temps en ticks, `ZADD LT`),
+un hash des pseudos (`lb:names`), et une limitation de débit par IP (120 requêtes, 12 parties par
+minute).
+
+- **En prod** : la fonction Vercel `api/scores.ts` (runtime Edge, bundlée avec la sim par Vercel).
+  1. Créer une base Redis gratuite sur [Upstash](https://console.upstash.com) (région proche de
+     Vercel).
+  2. Dans Vercel, Settings → Environment Variables : `UPSTASH_REDIS_REST_URL` et
+     `UPSTASH_REDIS_REST_TOKEN` (onglet « REST API » de la base), puis redéployer. Sans elles,
+     l'API répond 503 « classement non configuré » et le jeu affiche « hors ligne ».
+  3. Option : `VITE_SCORES_URL` pour pointer le jeu sur une autre adresse d'API (par défaut
+     `api/scores`, sur le même site).
+- **En dev** : `npm run dev` sert `/api/scores` lui-même (plugin Vite, même handler), sur un store en
+  mémoire perdu au redémarrage. Avec les variables Upstash dans l'environnement du shell, c'est
+  Upstash qui sert, comme en prod.
+
 ## Son
 
 Tout est synthétisé dans `src/io/audio/sfx.ts` (oscillateurs, bruit blanc généré en code, filtres,
@@ -346,6 +393,11 @@ première touche.
 - `test/physics.test.ts` : accroche et contrainte, rétraction auto/relâche/détache, chauffe et reprise, mort au mur
   au-dessus du seuil seulement, ennemis (kill traversant vs repoussée), tremplin (relance, jamais mortel),
   gouffre (mort `void`, retour au spawn).
+- `test/leaderboard.test.ts` : replays (base64, RLE, aller-retour, refus des replays abîmés ou trop
+  longs), empreintes de carte et de params, rejeu serveur (vraie partie acceptée avec le temps
+  recalculé ; inputs coupés ou en trop, carte ou params différents refusés), handler `/api/scores`
+  sur store mémoire (temps annoncé ignoré, meilleur temps conservé, top 10 trié, pseudos, débit),
+  store Upstash, enregistrement dans `Game` (replay vérifiable, remise à zéro, hors classement).
 - `test/levels.test.ts` : 3 + 3 cartes dans l'ordre, bords pleins, bas plat (sol, pics, tremplins ou
   gouffre ouvert), part de sol mortel croissante avec la difficulté, spawn au sol loin des dangers,
   ancrages atteignables depuis le sol et le spawn, pics et tremplins posés sur du plein, ennemis sur du

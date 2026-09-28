@@ -136,6 +136,11 @@ export class FocusNav {
         const el = this.current;
         if (!el) return false;
         if (el instanceof HTMLInputElement && el.type === 'range') return false;
+        // Champ texte : valider y entre pour taper (Échap ou les flèches en ressortent).
+        if (el instanceof HTMLInputElement && el.type === 'text') {
+          el.focus();
+          return true;
+        }
         el.click();
         return true;
       }

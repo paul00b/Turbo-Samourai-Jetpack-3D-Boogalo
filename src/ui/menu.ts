@@ -23,8 +23,10 @@ import { isLocalRelay } from '../net/session';
 import { clear, h } from './dom';
 import { formatTime } from './hud';
 import { FocusNav, MenuInput, type MenuAction } from './focusNav';
+import { LeaderboardClient } from '../io/leaderboard';
+import { LeaderboardUi, type BtnFactory } from './leaderboard';
 
-export type ScreenId = 'title' | 'race' | 'kills' | 'net' | 'controls' | 'settings' | 'pause' | 'complete';
+export type ScreenId = 'title' | 'race' | 'kills' | 'net' | 'controls' | 'settings' | 'pause' | 'complete' | 'board';
 
 /** Ce que promet chaque mode, sur sa carte du menu principal et en tête de son écran. */
 const MODE_LEAD: Record<LevelMode, string> = {
@@ -60,6 +62,10 @@ export class Menu {
   private controlsTab: 'kbm' | 'pad' = 'kbm';
   private lastUpdate = 0;
   private padStatusTimer = 0;
+  /** Classement mondial : bloc de fin de manche, écran Classement, pseudo (voir leaderboard.ts). */
+  private readonly lb = new LeaderboardUi(new LeaderboardClient());
+  private boardMode: LevelMode = 'race';
+  private readonly lbBtn: BtnFactory = (label, onClick, extra) => this.btn(label, onClick, extra);
 
   constructor(
     private readonly root: HTMLElement,
@@ -80,10 +86,13 @@ export class Menu {
     // Le menu gère lui-même Entrée/Espace/flèches : on coupe l'activation native des boutons (double clic sinon)
     // et le scroll de la page.
     window.addEventListener('keydown', (e) => {
-      if (!this.visible) return;
+      if (!this.visible || typingInField()) return;
       if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space' || e.code.startsWith('Arrow') || e.code === 'Tab') e.preventDefault();
     });
     deps.game.onPhase = (p) => this.onPhase(p);
+    this.lb.onChange = () => {
+      if (this.current === 'complete' || this.current === 'board') this.refresh();
+    };
     this.onPhase(deps.game.phase);
   }
 
@@ -99,8 +108,13 @@ export class Menu {
     this.stack.length = 0;
     if (p === 'menu') this.push('title');
     else if (p === 'paused') this.push('pause');
-    else if (p === 'complete') this.push('complete');
-    else this.hideAll();
+    else if (p === 'complete') {
+      this.lb.onComplete(this.deps.game);
+      this.push('complete');
+    } else {
+      if (p === 'playing') this.lb.reset();
+      this.hideAll();
+    }
   }
 
   private hideAll(): void {
@@ -161,6 +175,9 @@ export class Menu {
         break;
       case 'complete':
         el = this.buildComplete();
+        break;
+      case 'board':
+        el = this.lb.boardScreen(this.boardMode, this.deps.game.state.levelId, this.lbBtn, `Classement · ${LEVEL_MODE_LABEL[this.boardMode]}`, () => this.back());
         break;
     }
     this.screens.set(id, el);
@@ -262,6 +279,11 @@ export class Menu {
         inGame ? null : h('div', { class: 'menu-row' }, ...counts),
         inGame ? h('p', { class: 'menu-note', text: 'Choisir une carte relance la partie immédiatement.' }) : devices,
         h('div', { class: 'map-list' }, ...list),
+        this.btn('Classements', () => {
+          this.boardMode = mode;
+          this.lb.load(this.lb.boardFor(mode, this.deps.game.state.levelId));
+          this.push('board');
+        }),
         this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
       ),
     );
@@ -510,6 +532,7 @@ export class Menu {
       { class: 'menu-screen' },
       this.panel(
         'Paramètres',
+        this.lb.settingsRow(),
         h('div', { class: 'menu-row' }, h('span', { class: 'menu-label', text: 'Volume général' }), master, masterVal),
         h('div', { class: 'menu-row' }, h('span', { class: 'menu-label', text: 'Volume effets' }), sfx, sfxVal),
         h('div', { class: 'menu-row' }, h('span', { class: 'menu-label', text: 'Caméra (2 joueurs)' }), cam),
@@ -566,6 +589,7 @@ export class Menu {
             : `${st.kills} ennemi${st.kills > 1 ? 's' : ''} éliminé${st.kills > 1 ? 's' : ''} · ${info?.name ?? ''}`,
         }),
         perPlayer,
+        this.lb.completeBlock(this.lbBtn, st.levelId),
         guest ? h('p', { class: 'menu-note', text: 'En ligne, c\'est l\'hôte qui relance la manche ou change de carte.' }) : null,
         guest ? null : this.btn(race ? `Recommencer (${this.restartKeyLabel()})` : 'Recommencer le niveau', () => g.restart()),
         guest ? null : this.btn('Changer de carte', () => this.push(info?.mode ?? 'kills')),
@@ -662,7 +686,14 @@ export class Menu {
       return;
     }
 
-    const actions = this.input.poll(codes, dt);
+    // Dans un champ texte, les lettres, l'espace et Retour arrière s'écrivent : seules les flèches
+    // haut/bas (qui quittent le champ) et Entrée restent des commandes de menu ; Échap quitte le champ.
+    let nav = codes;
+    if (typingInField()) {
+      if (codes.some((c) => c === 'ArrowUp' || c === 'ArrowDown' || c === 'Escape')) (document.activeElement as HTMLElement).blur();
+      nav = codes.filter((c) => c === 'ArrowUp' || c === 'ArrowDown' || c === 'Enter' || c === 'NumpadEnter');
+    }
+    const actions = this.input.poll(nav, dt);
     for (const a of actions) this.handleAction(a);
   }
 
@@ -678,6 +709,12 @@ export class Menu {
     }
     this.nav.handle(a);
   }
+}
+
+/** Un champ texte a le focus clavier (pseudo, code de session, adresse du relais). */
+function typingInField(): boolean {
+  const el = document.activeElement;
+  return el instanceof HTMLInputElement && el.type === 'text';
 }
 
 function pct(v: number): string {
