@@ -111,6 +111,9 @@ body.debug-open #hud, body.debug-open #menu { right: 360px; }
 .menu-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .menu-row > .menu-btn { flex: 1; }
 .menu-row > .menu-btn.tiny, .menu-row > .menu-btn.slot { flex: 0 0 auto; }
+/* Rangées d'onglets : mêmes hauteurs même quand un libellé passe sur deux lignes, texte centré. */
+.menu-row.tab-row { align-items: stretch; }
+.tab-row > .menu-btn { display: flex; align-items: center; }
 .menu-label { flex: 0 0 160px; color: var(--muted); font-size: 14px; }
 .menu-value { flex: 0 0 50px; text-align: right; font-size: 14px; font-family: var(--pixel); }
 .menu-input { font: inherit; font-size: 14px; color: var(--text); background: #0c0f16; border: 1px solid var(--line); border-radius: 2px; padding: 8px 10px; flex: 1; min-width: 0; }

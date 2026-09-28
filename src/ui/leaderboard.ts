@@ -180,7 +180,7 @@ export class LeaderboardUi {
     const modeTabs = onMode
       ? h(
           'div',
-          { class: 'menu-row' },
+          { class: 'menu-row tab-row' },
           ...(['race', 'kills'] as const).map((m) => {
             const b = btn(LEVEL_MODE_LABEL[m], () => {
               if (m !== mode) onMode(m);
@@ -206,14 +206,14 @@ export class LeaderboardUi {
     // Course : le biome, puis la difficulté (neuf cartes). Arcade : une arène par biome.
     const tabs: HTMLElement[] = [];
     if (mode === 'race' && cur) {
-      tabs.push(h('div', { class: 'menu-row' }, ...BIOMES.map((b) => {
+      tabs.push(h('div', { class: 'menu-row tab-row' }, ...BIOMES.map((b) => {
         const inBiome = levelsIn('race', b.id);
         const target = inBiome.find((m) => m.difficulty === cur.difficulty) ?? inBiome[0];
         return tab(b.name, target.id, 'lb-biome', b.id === cur.biome, this.focusBiomeRow && b.id === cur.biome);
       })));
-      tabs.push(h('div', { class: 'menu-row' }, ...levelsIn('race', cur.biome).map((m) => tab(m.name, m.id, 'lb-map', m.id === levelId, !this.focusBiomeRow && m.id === levelId))));
+      tabs.push(h('div', { class: 'menu-row tab-row' }, ...levelsIn('race', cur.biome).map((m) => tab(m.name, m.id, 'lb-map', m.id === levelId, !this.focusBiomeRow && m.id === levelId))));
     } else {
-      tabs.push(h('div', { class: 'menu-row' }, ...levelsOf(mode).map((m) => tab(biomeInfo(m.biome).name, m.id, 'lb-map', m.id === levelId, m.id === levelId))));
+      tabs.push(h('div', { class: 'menu-row tab-row' }, ...levelsOf(mode).map((m) => tab(biomeInfo(m.biome).name, m.id, 'lb-map', m.id === levelId, m.id === levelId))));
     }
     const st = this.boards.get(levelId);
     let body: HTMLElement;
