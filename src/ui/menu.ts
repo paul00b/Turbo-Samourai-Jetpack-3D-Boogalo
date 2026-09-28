@@ -14,7 +14,7 @@ import {
   type GamepadControl,
 } from '../io/input/bindings';
 import { GamepadCapture, type GamepadManager } from '../io/input/gamepad';
-import { DT, LEVEL_INFOS, LEVEL_MODE_LABEL, type LevelMode } from '../sim';
+import { DT, getLevel, LEVEL_INFOS, LEVEL_MODE_LABEL, type LevelMode } from '../sim';
 import type { NetGame } from '../net/netGame';
 import { normalizeCode } from '../net/protocol';
 import type { KeyboardMouse } from '../io/input/keyboardMouse';
@@ -60,6 +60,9 @@ export class Menu {
   private controlsTab: 'kbm' | 'pad' = 'kbm';
   private lastUpdate = 0;
   private padStatusTimer = 0;
+  /** Branché par main.ts : ouvrir l'éditeur, y revenir après un test. */
+  openEditor: (() => void) | null = null;
+  returnToEditor: (() => void) | null = null;
 
   constructor(
     private readonly root: HTMLElement,
@@ -101,6 +104,18 @@ export class Menu {
     else if (p === 'paused') this.push('pause');
     else if (p === 'complete') this.push('complete');
     else this.hideAll();
+  }
+
+  /** L'éditeur prend l'écran : le menu se cache (et n'écoute plus les touches). */
+  hide(): void {
+    this.stack.length = 0;
+    this.hideAll();
+  }
+
+  /** Retour de l'éditeur au menu principal. */
+  showTitle(): void {
+    this.stack.length = 0;
+    this.push('title');
   }
 
   private hideAll(): void {
@@ -218,6 +233,7 @@ export class Menu {
         { class: 'menu-row title-more' },
         this.btn('Multijoueur en ligne', () => this.push('net'), { class: 'menu-btn secondary', 'data-nav-row': 'more' }),
         this.btn('Paramètres', () => this.push('settings'), { class: 'menu-btn secondary', 'data-nav-row': 'more' }),
+        this.openEditor ? this.btn('Éditeur de niveaux', () => this.openEditor?.(), { class: 'menu-btn secondary', 'data-nav-row': 'more' }) : null,
       ),
       h('p', { class: 'menu-hint' }, 'Flèches pour choisir · Entrée valide · Échap revient · Manette : croix, A valide, B retour'),
       h('p', { class: 'menu-hint', text: this.deps.audio.unlocked ? 'Son actif' : 'Son : activé au premier clic ou à la première touche' }),
@@ -533,9 +549,11 @@ export class Menu {
         'Pause',
         this.btn('Continuer', () => g.resume()),
         net ? null : this.btn(g.isRace ? `Recommencer (${this.restartKeyLabel()})` : 'Recommencer', () => g.restart()),
-        net
-          ? this.btn('Quitter la session en ligne', () => this.deps.net.leave(), { class: 'menu-btn secondary' })
-          : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
+        g.customTest && this.returnToEditor
+          ? this.btn("Retour à l'éditeur", () => this.returnToEditor?.(), { class: 'menu-btn secondary' })
+          : net
+            ? this.btn('Quitter la session en ligne', () => this.deps.net.leave(), { class: 'menu-btn secondary' })
+            : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
       ),
     );
   }
@@ -547,7 +565,9 @@ export class Menu {
     const net = g.net;
     const guest = net !== null && !net.isHost;
     const time = formatTime(st.finishTick * DT);
-    const info = LEVEL_INFOS[st.levelId];
+    // Carte perso (éditeur) : pas dans LEVEL_INFOS, on lit la carte elle-même.
+    const custom = g.customTest && this.returnToEditor !== null;
+    const info = LEVEL_INFOS[st.levelId] ?? { name: getLevel(st.levelId).name, mode: getLevel(st.levelId).mode };
     const race = info?.mode === 'race';
     const perPlayer =
       st.playerCount === 2
@@ -568,9 +588,9 @@ export class Menu {
         perPlayer,
         guest ? h('p', { class: 'menu-note', text: 'En ligne, c\'est l\'hôte qui relance la manche ou change de carte.' }) : null,
         guest ? null : this.btn(race ? `Recommencer (${this.restartKeyLabel()})` : 'Recommencer le niveau', () => g.restart()),
-        guest ? null : this.btn('Changer de carte', () => this.push(info?.mode ?? 'kills')),
+        custom ? this.btn("Retour à l'éditeur", () => this.returnToEditor?.()) : guest ? null : this.btn('Changer de carte', () => this.push(info?.mode ?? 'kills')),
         this.btn('Continuer à jouer', () => g.resumeAfterComplete(), { class: 'menu-btn secondary' }),
-        net ? this.btn('Quitter la session', () => this.deps.net.leave(), { class: 'menu-btn secondary' }) : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
+        custom ? null : net ? this.btn('Quitter la session', () => this.deps.net.leave(), { class: 'menu-btn secondary' }) : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
       ),
     );
   }

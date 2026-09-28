@@ -13,7 +13,7 @@ thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 292 tests : déterminisme, rollback, physique, réseau, garde-fou statique, direction artistique
+npm test             # 316 tests : déterminisme, rollback, physique, réseau, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
@@ -294,6 +294,51 @@ Faisabilité : chaque carte a été jouée par un bot d'exploration (Go-Explore)
 Il finit les trois courses (13 à 23 s de jeu sur sa meilleure trajectoire) et nettoie chaque arène
 d'arcade en une seule partie.
 
+## Éditeur de niveaux
+
+**Menu → Éditeur de niveaux.** Une vue plein écran (DOM + canvas 2D, `src/editor/`) pour dessiner
+ses cartes, les tester dans le vrai jeu et les exporter vers `level.ts`.
+
+| Action | Commande |
+|---|---|
+| Peindre / gommer | clic gauche / clic droit |
+| Tuiles | `1` mur accrochable, `2` lisse, `3` pics, `4` tremplin, `5` vide, `6` spawn (unique), `7` ennemi, `8` patrouille, `9` arrivée |
+| Outils | `B` pinceau, `R` rectangle, `L` ligne, `G` remplissage, `I` pipette, `M` sélection, `P` presets |
+| Sélection | glisser pour sélectionner, glisser dedans pour déplacer ; `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (le collage suit la souris, clic pour poser), `Suppr` vide, `Ctrl+A` tout |
+| Annuler / refaire | `Ctrl+Z` / `Ctrl+Y` (ou `Ctrl+Maj+Z`), 200 niveaux |
+| Vue | molette : zoom sur le curseur ; clic milieu ou `Espace` + glisser : déplacer ; flèches ; `+` / `-` ; `0` : cadrer ; `Maj` + molette : défiler |
+| Tester | `T` ou **▶ Tester** : la carte se lance dans le jeu (1 ou 2 joueurs locaux, thème choisi) ; **Pause → Retour à l'éditeur** revient exactement où on était |
+
+**Presets** (`src/editor/presets.ts`, paramétrables dans le panneau de droite, aperçu fantôme, `R` ou
+clic droit pour le miroir) : lanterne, contrepoids (la tige monte jusqu'au plafond), plateforme, balcon
+mural, tour crénelée (descend jusqu'au sol), stalactite, stalagmite, dents de slalom, champ de
+tremplins, tronçon de sol (sol, pics, gouffre ou tremplins, toujours posé en bas), ennemi sur
+plateforme, pont à deux voies, rampe. Ce sont les briques des cartes officielles.
+
+**Réglages de carte** (barre du haut) : nom, mode (arcade / course), thème, largeur × hauteur
+(**Taille** redimensionne en gardant le contenu calé en bas à gauche : le sol reste le sol, les bords
+sont recréés). Une nouvelle carte part d'un gabarit déjà jouable.
+
+**Vérification en direct** : les règles de `src/sim/levelRules.ts` (les mêmes que celles que
+`test/levels.test.ts` exige des cartes officielles). Rouge = bloquant (pas de spawn, course sans
+arrivée, arcade sans ennemi : le test est refusé) ; doré = conseil de design (bords, bas plat, pics ou
+tremplins dans le vide, ennemi flottant, pas d'ancrage à portée du spawn…). Un clic centre la vue sur
+la tuile fautive ; « Ajouter l'arrivée » répare une course sans arrivée.
+
+**Sauvegarde** : automatique, dans le navigateur (`localStorage`, clé `tsj.editor.maps.v1`). **Mes
+cartes** : ouvrir, renommer, dupliquer, supprimer (confirmation dans la fenêtre), nouvelle arène ou
+course, ou partir d'une **copie d'une carte officielle**.
+
+**Export / import** : **Exporter** donne la carte au format de `level.ts` (une constante `MAP_…` et
+l'entrée de `LEVEL_DEFS` en commentaire) ; la coller dans `src/sim/level.ts` en fait une carte
+officielle (penser au thème dans `LEVEL_THEMES`). **Importer** accepte cet export, un bloc copié de
+`level.ts` ou les lignes brutes de la carte.
+
+Côté sim, la carte testée occupe l'emplacement `CUSTOM_LEVEL_ID` (200, `setCustomLevel`) : `getLevel`
+la renvoie, mais `clampLevelId` l'ignore, donc elle n'est jamais enregistrée comme carte choisie ni
+envoyée à un pair. **Carte perso = jeu local uniquement** : le multijoueur en ligne joue les cartes
+officielles.
+
 ## Objectif, compteur d'ennemis et chrono
 
 Le compteur et la condition de fin vivent **dans la sim** (`state.kills`, `state.finished`,
@@ -349,7 +394,12 @@ première touche.
 - `test/levels.test.ts` : 3 + 3 cartes dans l'ordre, bords pleins, bas plat (sol, pics, tremplins ou
   gouffre ouvert), part de sol mortel croissante avec la difficulté, spawn au sol loin des dangers,
   ancrages atteignables depuis le sol et le spawn, pics et tremplins posés sur du plein, ennemis sur du
-  sol, arrivée présente, lointaine et pleine hauteur sur les seules cartes de course.
+  sol, arrivée présente, lointaine et pleine hauteur sur les seules cartes de course. Les règles
+  structurelles passent par `validateRows` (`src/sim/levelRules.ts`), le module que l'éditeur affiche.
+- `test/editor.test.ts` : outils de grille (rectangle, ligne, remplissage, spawn unique, copier-coller),
+  annuler/refaire, redimensionnement, gabarits valides, chaque preset (dans la grille, miroir compris),
+  export/import aller-retour, règles de validation, carte perso jouable sur `CUSTOM_LEVEL_ID` et thème
+  auto de l'éditeur.
 - `test/netcode.test.ts` : deux `Game` complets reliés par un lien simulé (latence, gigue), les états
   confirmés convergent, le rollback se déclenche vraiment, l'input local est figé par tick, un
   changement de params de l'hôte s'applique au même tick des deux côtés (y compris quand l'ordre

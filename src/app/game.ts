@@ -3,6 +3,7 @@
  */
 import {
   clampLevelId,
+  CUSTOM_LEVEL_ID,
   cloneState,
   createInitialState,
   getLevel,
@@ -68,6 +69,8 @@ export class Game {
   /** L'écran de fin n'est proposé qu'une fois par manche (sinon « Continuer à jouer » le rouvre). */
   private completeShown = false;
   onPhase: ((phase: Phase) => void) | null = null;
+  /** Carte imposée hors réglages (la carte perso de l'éditeur, en test) ; null = la carte choisie. */
+  private levelOverride: number | null = null;
 
   constructor(private readonly deps: GameDeps) {
     const s = deps.settings.get();
@@ -86,7 +89,7 @@ export class Game {
   newSim(playerCount: number): void {
     const s = this.deps.settings.get();
     this.completeShown = false;
-    const levelId = clampLevelId(s.levelId);
+    const levelId = this.levelOverride ?? clampLevelId(s.levelId);
     this.state = createInitialState(s.seed, playerCount, this.deps.params.get(), levelId);
     this.prev = cloneState(this.state);
     this.deps.renderer.setLevel(getLevel(levelId));
@@ -104,6 +107,23 @@ export class Game {
     this.deps.mapper.suppressPauseEdge();
     this.setPhase('playing');
     this.loop.resume();
+  }
+
+  /** Test d'une carte de l'éditeur (setCustomLevel déjà appelé) : partie locale, réglages intacts. */
+  startCustom(playerCount: number): void {
+    this.levelOverride = CUSTOM_LEVEL_ID;
+    this.start(playerCount);
+  }
+
+  /** Vrai pendant le test d'une carte de l'éditeur. */
+  get customTest(): boolean {
+    return this.levelOverride !== null;
+  }
+
+  /** Fin du test : retour à la carte choisie dans les réglages, au menu. */
+  endCustom(): void {
+    this.levelOverride = null;
+    this.quitToMenu();
   }
 
   /** Carte en cours en mode course (atteindre l'arrivée), par opposition à l'arcade (éliminer). */
@@ -137,6 +157,7 @@ export class Game {
    */
   startNet(net: NetPlay): void {
     this.net = net;
+    this.levelOverride = null; // une carte perso ne se joue pas en ligne
     this.start(2);
   }
 
@@ -198,7 +219,8 @@ export class Game {
   setLevel(id: number): void {
     const levelId = clampLevelId(id);
     if (this.net && !this.net.isHost) return; // en ligne, la carte est celle de l'hôte
-    if (levelId === this.state.levelId && this.phase !== 'complete') return;
+    if (levelId === this.state.levelId && this.phase !== 'complete' && this.levelOverride === null) return;
+    this.levelOverride = null;
     this.deps.settings.update((st) => (st.levelId = levelId));
     if (this.net) {
       this.net.broadcastRestart(this.deps.settings.get().seed, levelId);
