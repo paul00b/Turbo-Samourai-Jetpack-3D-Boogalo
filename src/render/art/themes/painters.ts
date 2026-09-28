@@ -3,6 +3,7 @@
  * les tests et les outils sous Node peuvent charger. Le registre complet, avec les runtimes, est
  * dans ./index.ts.
  */
+import { CUSTOM_LEVEL_ID } from '../../../sim/level';
 import type { ThemeId, ThemePainter } from './types';
 import { bambooPainter } from './bamboo/painter';
 import { forgePainter } from './forge/painter';
@@ -24,7 +25,15 @@ export const PAINTERS: Record<ThemeId, ThemePainter> = {
  */
 export const LEVEL_THEMES: readonly ThemeId[] = ['port', 'bamboo', 'forge', 'port', 'bamboo', 'forge'];
 
+/** Thème de la carte perso (choisi dans l'éditeur). */
+let customTheme: ThemeId = 'port';
+
+export function setCustomTheme(id: ThemeId): void {
+  customTheme = id;
+}
+
 export function themeIdFor(setting: ThemeSetting, levelId: number): ThemeId {
   if (setting !== 'auto') return setting;
+  if (levelId === CUSTOM_LEVEL_ID) return customTheme;
   return LEVEL_THEMES[levelId] ?? 'port';
 }

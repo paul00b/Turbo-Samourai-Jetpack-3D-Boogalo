@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PARAMS,
+  LEVEL_DEFS,
   LEVELS,
   LEVEL_INFOS,
   makeRayHit,
@@ -12,6 +13,7 @@ import {
   TILE_SIZE,
   isSolidTile,
   tileAt,
+  validateRows,
   type Level,
 } from '../src/sim';
 
@@ -91,36 +93,19 @@ describe('level design', () => {
     }
   });
 
-  for (const level of LEVELS) {
+  for (const [id, level] of LEVELS.entries()) {
     describe(`${level.mode === 'race' ? 'Course' : 'Arcade'} ${level.name}`, () => {
-      it('lignes de largeur constante, bords pleins (sauf les gouffres en bas)', () => {
-        expect(level.tiles).toHaveLength(level.width * level.height);
-        for (let x = 0; x < level.width; x++) expect(isSolidTile(tileAt(level, x, 0))).toBe(true);
-        for (let y = 0; y < level.height; y++) {
-          expect(isSolidTile(tileAt(level, 0, y))).toBe(true);
-          expect(isSolidTile(tileAt(level, level.width - 1, y))).toBe(true);
-        }
-      });
-
-      it('le bas est plat : sol, pics, tremplins ou gouffre ouvert, rien d\'autre', () => {
-        const F = floorRow(level);
-        const B = level.height - 1;
-        let gaps = 0;
-        for (let x = 1; x < level.width - 1; x++) {
-          const top = tileAt(level, x, F);
-          const bottom = tileAt(level, x, B);
-          if (top === T_AIR) {
-            // Gouffre : ouvert jusqu'en bas, donc on tombe hors de la carte.
-            expect(bottom, `colonne ${x}`).toBe(T_AIR);
-            gaps++;
-            continue;
-          }
-          expect([T_SOLID, T_SPIKE, T_BOUNCE], `colonne ${x}`).toContain(top);
-          expect(bottom, `colonne ${x}`).toBe(T_SOLID);
-        }
+      it('respecte les règles de level design (celles que l\'éditeur affiche)', () => {
+        // Bords pleins, bas plat (sol, pics, tremplins ou gouffre ouvert), pics et tremplins posés,
+        // ennemis posés, spawn unique et au sol, ancrage à portée du spawn, arrivée en course.
+        expect(validateRows(LEVEL_DEFS[id].rows, level.mode)).toEqual([]);
         // Sous la carte, c'est le vide (et pas un mur invisible).
         expect(tileAt(level, 5, level.height)).toBe(T_AIR);
-        if (level.name === 'Horrible') expect(gaps).toBeGreaterThan(10);
+        if (level.name === 'Horrible') {
+          let gaps = 0;
+          for (let x = 1; x < level.width - 1; x++) if (tileAt(level, x, floorRow(level)) === T_AIR) gaps++;
+          expect(gaps).toBeGreaterThan(10);
+        }
       });
 
       it('le spawn est debout sur le sol, loin des pics et des gouffres', () => {
@@ -141,37 +126,20 @@ describe('level design', () => {
         // Rampe de difficulté, mesurée en visant droit en haut depuis le sol.
         const min: Record<string, number> = { Facile: 0.4, Difficile: 0.25, Horrible: 0.1 };
         expect(groundAnchorCoverage(level)).toBeGreaterThan(min[level.name]);
-        // Et depuis le spawn, un ancrage est à portée dans un cône vers le haut.
-        const hit = makeRayHit();
-        let found = false;
-        for (let a = -170; a <= -10 && !found; a += 2) {
-          const r = (a * Math.PI) / 180;
-          raycastTiles(level, level.spawnX, level.spawnY, Math.cos(r), Math.sin(r), DEFAULT_PARAMS.hookMaxLength, hit);
-          if (hit.hit && hit.tile === T_SOLID && hit.y < level.spawnY - TILE_SIZE) found = true;
-        }
-        expect(found, 'aucun ancrage à portée du spawn').toBe(true);
       });
 
-      it('pics et tremplins reposent sur du plein, les tremplins ont de l\'air au-dessus', () => {
+      it('les tremplins ont de la place : 6 tuiles d\'air au-dessus', () => {
         for (let y = 0; y < level.height; y++) {
           for (let x = 0; x < level.width; x++) {
-            const t = tileAt(level, x, y);
-            if (t !== T_SPIKE && t !== T_BOUNCE) continue;
-            expect(tileAt(level, x, y + 1), `${t === T_SPIKE ? 'pic' : 'tremplin'} en (${x}, ${y})`).toBe(T_SOLID);
-            if (t === T_BOUNCE) for (let k = 1; k <= 6; k++) expect(tileAt(level, x, y - k), `air au-dessus du tremplin (${x}, ${y})`).toBe(T_AIR);
+            if (tileAt(level, x, y) !== T_BOUNCE) continue;
+            for (let k = 1; k <= 6; k++) expect(tileAt(level, x, y - k), `air au-dessus du tremplin (${x}, ${y})`).toBe(T_AIR);
           }
         }
       });
 
       if (level.mode === 'kills') {
-        it('les ennemis sont posés sur du sol sûr, et assez nombreux', () => {
+        it('assez d\'ennemis pour une arène', () => {
           expect(level.enemies.length).toBeGreaterThanOrEqual(6);
-          for (const e of level.enemies) {
-            const tx = Math.floor(e.x / TILE_SIZE);
-            const ty = Math.floor(e.y / TILE_SIZE);
-            expect(tileAt(level, tx, ty), `ennemi en (${tx}, ${ty})`).toBe(T_AIR);
-            expect(isSolidTile(tileAt(level, tx, ty + 1)), `sous l'ennemi (${tx}, ${ty})`).toBe(true);
-          }
         });
       }
     });

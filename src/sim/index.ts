@@ -10,3 +10,4 @@ export * from './snapshot';
 export * from './history';
 export * from './selftest';
 export * from './replay';
+export * from './levelRules';

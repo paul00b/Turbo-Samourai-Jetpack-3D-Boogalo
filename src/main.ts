@@ -19,6 +19,7 @@ import { MapPanel } from './ui/mapPanel';
 import { Menu } from './ui/menu';
 import { NetGame } from './net/netGame';
 import { SidePanelHost } from './ui/sidePanel';
+import { LevelEditor } from './editor/editorView';
 
 /** Étiquette du HUD en bas à droite (vide en rendu normal), comme les modes des planches. */
 const RENDER_MODE_LABEL: Record<RenderMode, string> = { art: '', values: 'VALEURS', play: 'COUCHE DE JEU', greybox: 'GREY-BOX' };
@@ -64,6 +65,12 @@ async function boot(): Promise<void> {
   const net = new NetGame({ game, settings, params });
   const menu = new Menu(menuEl, { game, net, settings, kbm, pads, sfx, audio });
   net.onChange = () => menu.refresh();
+  const editor = new LevelEditor(document.body, { game, settings });
+  editor.onOpen = () => menu.hide();
+  editor.onClose = () => menu.showTitle();
+  menu.openEditor = () => editor.open();
+  menu.returnToEditor = () => editor.returnFromTest();
+  menu.refresh();
   const panels = new SidePanelHost(debugEl, settings);
   const debug = new DebugPanel(panels.add({ id: 'debug', label: 'DEBUG', title: 'F1' }), { game, settings, params, renderer });
   const maps = new MapPanel(panels.add({ id: 'cartes', label: 'CARTES', title: 'F5' }), { game, settings });

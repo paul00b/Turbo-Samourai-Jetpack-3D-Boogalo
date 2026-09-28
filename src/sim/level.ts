@@ -617,7 +617,20 @@ export function clampLevelId(id: number): number {
 }
 
 export function getLevel(id: number): Level {
+  if (id === CUSTOM_LEVEL_ID && customLevel) return customLevel;
   return LEVELS[id] ?? LEVELS[0];
+}
+
+/**
+ * Emplacement de la carte perso (éditeur) : un id u8 hors des cartes officielles. La sim la lit
+ * comme les autres via getLevel ; clampLevelId l'ignore, donc elle n'est jamais persistée comme
+ * carte choisie ni envoyée à un pair en ligne.
+ */
+export const CUSTOM_LEVEL_ID = 200;
+let customLevel: Level | null = null;
+
+export function setCustomLevel(level: Level | null): void {
+  customLevel = level;
 }
 
 /**
