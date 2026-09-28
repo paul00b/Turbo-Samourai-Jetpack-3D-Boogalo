@@ -119,7 +119,8 @@ describe('level design', () => {
     describe(`${level.mode === 'race' ? 'Course' : 'Arcade'} ${LEVEL_INFOS[id].title}`, () => {
       it('respecte les règles de level design (celles que l\'éditeur affiche)', () => {
         // Bords pleins, bas plat (sol, pics, tremplins ou gouffre ouvert), pics et tremplins posés,
-        // ennemis posés, spawn unique et au sol, ancrage à portée du spawn, arrivée en course.
+        // ennemis posés, spawn unique et au sol, ancrage à portée du spawn, arrivée en course, et un
+        // couloir d'air d'au moins 3 tuiles qui mène du spawn à l'arrivée (jamais de course bouchée).
         expect(validateRows(LEVEL_DEFS[id].rows, level.mode)).toEqual([]);
         // Sous la carte, c'est le vide (et pas un mur invisible).
         expect(tileAt(level, 5, level.height)).toBe(T_AIR);

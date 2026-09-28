@@ -142,7 +142,73 @@ export function validateRows(rows: readonly string[], mode: LevelMode): LevelIss
     if (spike) push({ rule: 'spawn-spike', severity: 'warn', message: 'Pics trop près du spawn.', x: sp.x, y: sp.y });
     if (!anchorNearSpawn(level)) push({ rule: 'spawn-anchor', severity: 'warn', message: 'Aucun ancrage (#) à portée de grappin depuis le spawn.', x: sp.x, y: sp.y });
   }
+
+  // Course : un chemin d'air mène du spawn à l'arrivée, et il n'est pas un trou de souris.
+  if (mode === 'race' && sp && level.goal) {
+    const open = passageToGoal(level, 1);
+    if (!open.ok) {
+      push({ rule: 'goal-unreachable', severity: 'error', message: 'Arrivée inaccessible : aucun passage d\'air ne mène du spawn à l\'arrivée.', x: open.x, y: open.y });
+    } else {
+      const wide = passageToGoal(level, MIN_PASSAGE);
+      if (!wide.ok) push({ rule: 'passage-narrow', severity: 'warn', message: `Passage trop étroit vers l'arrivée : aucun couloir de ${MIN_PASSAGE} tuiles au-delà de ce point.`, x: wide.x, y: wide.y });
+    }
+  }
   return out;
+}
+
+/** Largeur minimale, en tuiles, du couloir d'air qui mène du spawn à l'arrivée d'une course. */
+export const MIN_PASSAGE = 3;
+
+/**
+ * Le spawn mène-t-il à l'arrivée par l'air, dans un couloir d'au moins `k` tuiles ? On fait glisser
+ * un carré de k × k tuiles d'air (ni mur, ni pics, ni tremplin) depuis le spawn. Sinon, rend la
+ * case la plus à droite atteinte : c'est là que le chemin se bouche.
+ */
+export function passageToGoal(level: Level, k: number): { ok: boolean; x: number; y: number } {
+  const w = level.width;
+  const h = level.height;
+  const goal = level.goal;
+  const sx = Math.floor(level.spawnX / TILE_SIZE);
+  const sy = Math.floor(level.spawnY / TILE_SIZE);
+  if (!goal) return { ok: false, x: sx, y: sy };
+  const gx0 = goal.x / TILE_SIZE;
+  const gy0 = goal.y / TILE_SIZE;
+  const gx1 = gx0 + goal.w / TILE_SIZE - 1;
+  const gy1 = gy0 + goal.h / TILE_SIZE - 1;
+  const fits = (x: number, y: number): boolean => {
+    if (x < 0 || y < 0 || x + k > w || y + k > h) return false;
+    for (let j = 0; j < k; j++) for (let i = 0; i < k; i++) if (tileAt(level, x + i, y + j) !== T_AIR) return false;
+    return true;
+  };
+  const seen = new Uint8Array(w * h);
+  const queue: number[] = [];
+  for (let y = sy - k + 1; y <= sy; y++) {
+    for (let x = sx - k + 1; x <= sx; x++) {
+      if (fits(x, y)) {
+        seen[y * w + x] = 1;
+        queue.push(x, y);
+      }
+    }
+  }
+  let bx = sx;
+  let by = sy;
+  for (let q = 0; q < queue.length; q += 2) {
+    const x = queue[q];
+    const y = queue[q + 1];
+    if (x <= gx1 && x + k - 1 >= gx0 && y <= gy1 && y + k - 1 >= gy0) return { ok: true, x, y };
+    if (x > bx) {
+      bx = x;
+      by = y;
+    }
+    for (let d = 0; d < 4; d++) {
+      const nx = x + (d === 0 ? 1 : d === 1 ? -1 : 0);
+      const ny = y + (d === 2 ? 1 : d === 3 ? -1 : 0);
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h || seen[ny * w + nx] || !fits(nx, ny)) continue;
+      seen[ny * w + nx] = 1;
+      queue.push(nx, ny);
+    }
+  }
+  return { ok: false, x: bx + k - 1, y: by };
 }
 
 /** Un ancrage accrochable dans le cône vers le haut, à portée de grappin depuis le spawn. */

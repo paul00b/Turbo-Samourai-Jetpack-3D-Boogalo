@@ -213,6 +213,30 @@ describe('règles de validation', () => {
     for (let y = 0; y < noAnchor.floorRow; y++) noAnchor.set(0, y, '='); // le mur gauche aussi est un ancrage
     expect(rules(noAnchor.rows(), 'kills')).toContain('spawn-anchor');
   });
+
+  it('course : un passage d\'au moins 3 tuiles mène du spawn à l\'arrivée', () => {
+    const g = templateGrid('race');
+    const F = g.floorRow;
+    expect(rules(g.rows(), 'race')).not.toContain('goal-unreachable');
+    // Un mur du plafond au sol entre le spawn et l'arrivée : la course ne se termine pas.
+    const sealed = g.clone();
+    for (let y = 1; y < F; y++) sealed.set(80, y, '#');
+    expect(rules(sealed.rows(), 'race')).toContain('goal-unreachable');
+    const issue = validateRows(sealed.rows(), 'race').find((i) => i.rule === 'goal-unreachable')!;
+    expect(issue.severity).toBe('error');
+    expect(issue.x).toBe(79);
+    // Une fente de 2 tuiles : jouable, mais signalée ; à 3 tuiles, plus rien à dire.
+    const slit = sealed.clone();
+    for (const y of [F - 6, F - 5]) slit.set(80, y, '.');
+    expect(rules(slit.rows(), 'race')).not.toContain('goal-unreachable');
+    expect(rules(slit.rows(), 'race')).toContain('passage-narrow');
+    slit.set(80, F - 4, '.');
+    expect(rules(slit.rows(), 'race')).not.toContain('passage-narrow');
+    // Les pics ne sont pas un passage.
+    const spiked = sealed.clone();
+    for (const y of [F - 6, F - 5, F - 4]) spiked.set(80, y, '^');
+    expect(rules(spiked.rows(), 'race')).toContain('goal-unreachable');
+  });
 });
 
 describe('carte perso dans la sim', () => {

@@ -13,7 +13,7 @@ thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 493 tests : déterminisme, rollback, physique, réseau, classement, éditeur, garde-fou statique, direction artistique
+npm test             # 494 tests : déterminisme, rollback, physique, réseau, classement, éditeur, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
@@ -294,7 +294,7 @@ chrono. Chaque biome a ses sections, en plus des sections communes :
 | Port · **Facile** | 300 × 48 | Départ, pont, tour (porte ouverte), slalom, tunnel, arrivée. Presque aucun piège. |
 | Port · **Difficile** | 330 × 48 | Quais sur l'eau, grue, jonque, entrepôt à pics, quais piégés. |
 | Port · **Horrible** | 362 × 48 | Jonque en pleine mer, grue, quais piégés, deux jonques, entrepôt, grue. Presque tout est mer. |
-| Bambouseraie · **Facile** | 300 × 48 | Bambous à nœuds serrés, torii flottants, pagode, slalom, bambous. |
+| Bambouseraie · **Facile** | 300 × 48 | Allée droite entre bambous montants et pendus, torii flottants, pagode, slalom, bambous. |
 | Bambouseraie · **Difficile** | 340 × 48 | Départ, slalom, gouffre (pics), pont, tour, tunnel. Plafonds et faces lisses par tronçons. |
 | Bambouseraie · **Horrible** | 370 × 48 | Bambous à nœuds rares sur des épines, torii au-dessus des ravins, slalom, pagode, bambous. |
 | Forteresse · **Facile** | 300 × 48 | Rempart à porte ouverte, passerelles, cachot, remparts, un peu de lave. |
@@ -319,12 +319,19 @@ Règles de level design, vérifiées par `test/levels.test.ts` :
    arcade.
 4. Pics et tremplins reposent sur du plein, les tremplins ont de l'air au-dessus, les ennemis sont posés
    sur du sol et jamais entre deux créneaux.
+5. **Toujours un passage.** Un couloir d'air d'au moins 3 tuiles de large (ni mur, ni pics, ni tremplin)
+   mène du spawn à l'arrivée. Une course bouchée est refusée ; un couloir plus étroit est signalé.
 
 Faisabilité : chaque course a été jouée par un bot d'exploration (Go-Explore : visée sur 13 directions,
 deux grappins, jetpack, états archivés par case de 64 px) branché sur la vraie sim, avec les params par
-défaut. Il finit les neuf courses, en 15 à 28 s de jeu sur sa meilleure trajectoire (Port 15 / 23 / 28 s,
-Bambouseraie 24 / 25 / 28 s, Forteresse 17 / 20 / 23 s). Les arènes d'arcade n'ont pas changé. Un bot
-prouve qu'une carte se termine, pas qu'elle est agréable : le ressenti se règle en jouant.
+défaut. Le bot ne triche pas : une branche où le joueur passe d'une poche d'air à une autre sans chemin
+d'air entre les deux (traversée de mur) est jetée. Il finit les neuf courses, en 15 à 33 s de jeu sur sa
+meilleure trajectoire (Port 15 / 23 / 28 s, Bambouseraie 19 / 25 / 33 s, Forteresse 17 / 24 / 23 s). On
+mesure aussi les goulets, sur plusieurs graines : le nombre d'essais qu'il lui faut pour avancer de 10
+tuiles. Sur les courses d'origine, le pire goulet reste sous ~950 essais ; les nouvelles facile et
+difficile aussi, les horribles montent jusqu'à ~1 600 (une graine sur six à ~6 000 dans la
+Bambouseraie). Les arènes d'arcade n'ont pas changé. Un bot prouve qu'une carte se termine et repère
+les passages durs, pas qu'elle est agréable : le ressenti se règle en jouant.
 
 ## Éditeur de niveaux
 
@@ -353,8 +360,9 @@ sont recréés). Une nouvelle carte part d'un gabarit déjà jouable.
 
 **Vérification en direct** : les règles de `src/sim/levelRules.ts` (les mêmes que celles que
 `test/levels.test.ts` exige des cartes officielles). Rouge = bloquant (pas de spawn, course sans
-arrivée, arcade sans ennemi : le test est refusé) ; doré = conseil de design (bords, bas plat, pics ou
-tremplins dans le vide, ennemi flottant, pas d'ancrage à portée du spawn…). Un clic centre la vue sur
+arrivée ou arrivée inaccessible, arcade sans ennemi : le test est refusé) ; doré = conseil de design
+(bords, bas plat, pics ou tremplins dans le vide, ennemi flottant, pas d'ancrage à portée du spawn,
+passage de moins de 3 tuiles vers l'arrivée…). Un clic centre la vue sur
 la tuile fautive ; « Ajouter l'arrivée » répare une course sans arrivée.
 
 **Sauvegarde** : automatique, dans le navigateur (`localStorage`, clé `tsj.editor.maps.v1`). **Mes
@@ -479,12 +487,13 @@ première touche.
 - `test/levels.test.ts` : ids publiés stables, un biome = une arène + trois courses, bords pleins, bas plat (sol, pics, tremplins ou
   gouffre ouvert), part de sol mortel croissante avec la difficulté, spawn au sol loin des dangers,
   ancrages atteignables depuis le sol et le spawn, pics et tremplins posés sur du plein, ennemis sur du
-  sol, arrivée présente, lointaine et pleine hauteur sur les seules cartes de course, sol mortel
+  sol, arrivée présente, lointaine, pleine hauteur et accessible par un couloir de 3 tuiles sur les seules
+  cartes de course, sol mortel
   croissant dans chaque biome et au même palier d'un biome à l'autre. Les règles
   structurelles passent par `validateRows` (`src/sim/levelRules.ts`), le module que l'éditeur affiche.
 - `test/editor.test.ts` : outils de grille (rectangle, ligne, remplissage, spawn unique, copier-coller),
   annuler/refaire, redimensionnement, gabarits valides, chaque preset (dans la grille, miroir compris),
-  export/import aller-retour, règles de validation, carte perso jouable sur `CUSTOM_LEVEL_ID` et thème
+  export/import aller-retour, règles de validation (dont l'arrivée inaccessible et le passage étroit), carte perso jouable sur `CUSTOM_LEVEL_ID` et thème
   auto de l'éditeur.
 - `test/netcode.test.ts` : deux `Game` complets reliés par un lien simulé (latence, gigue), les états
   confirmés convergent, le rollback se déclenche vraiment, l'input local est figé par tick, un
