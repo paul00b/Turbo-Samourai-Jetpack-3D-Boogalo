@@ -6,10 +6,14 @@
 import './editor.css';
 import type { Game } from '../app/game';
 import type { SettingsStore } from '../io/settings';
+import type { WorkshopClient } from '../io/workshop';
+import { sanitizeMapName, type WorkshopMap } from '../net/workshopApi';
+import { NAME_MAX } from '../net/scoresApi';
 import { LEVEL_THEMES, setCustomTheme } from '../render/art/themes/painters';
 import type { ThemeId } from '../render/art/themes/types';
-import { LEVEL_DEFS, LEVEL_INFOS, parseLevel, setCustomLevel, validateRows, type Level, type LevelIssue } from '../sim';
+import { DT, encodeReplay, hashLevel, hashToHex, LEVEL_DEFS, LEVEL_INFOS, parseLevel, setCustomLevel, validateRows, type Level, type LevelIssue, type ReplayData } from '../sim';
 import { clear, h } from '../ui/dom';
+import { formatTime } from '../ui/hud';
 import { exportMap, importMap, type MapDoc } from './format';
 import {
   applyCells,
@@ -34,6 +38,8 @@ import { EditorStore, type SavedMap } from './store';
 export interface EditorDeps {
   game: Game;
   settings: SettingsStore;
+  /** Workshop (publier) ; null : pas de serveur, le bouton Publier le dit. */
+  workshop?: WorkshopClient | null;
 }
 
 type Tool = 'brush' | 'rect' | 'line' | 'fill' | 'pick' | 'select' | 'preset';
@@ -216,6 +222,43 @@ export class LevelEditor {
     this.open();
   }
 
+  /**
+   * Fin d'un test réussi (seul, params par défaut) : ce replay prouve que la carte se termine. On le
+   * garde avec l'empreinte de la carte testée ; toute retouche de la géométrie le rend caduc.
+   */
+  recordProof(replay: ReplayData): void {
+    if (!this.map) return;
+    const hash = this.currentHash();
+    if (!hash || hash !== hashToHex(replay.levelHash)) return;
+    this.map.proof = { hash, replay: encodeReplay(replay), ticks: replay.inputs.length };
+    this.store.save(this.map);
+  }
+
+  /**
+   * Depuis le workshop : « Créer une copie » (une nouvelle carte à toi, qui garde d'où elle vient) ou
+   * « Modifier » ta propre carte publiée (la copie locale reste liée : publier met à jour la version en ligne).
+   */
+  importWorkshop(map: WorkshopMap, asOwner: boolean): void {
+    const doc: MapDoc = { name: map.name, mode: map.mode, theme: map.theme, rows: map.rows.slice() };
+    let saved: SavedMap | null = asOwner ? this.store.byWorkshopId(map.id) : null;
+    if (!saved) {
+      saved = asOwner
+        ? this.store.create(doc, { workshopId: map.id, parent: map.parent ?? undefined })
+        : this.store.create({ ...doc, name: this.store.freeName(`${map.name} (copie)`) }, { parent: { id: map.id, name: map.name, author: map.author } });
+    }
+    this.openMap(saved.id);
+    this.toast(asOwner ? `« ${saved.name} » : modifie-la, teste-la, puis republie-la.` : `Copie de « ${map.name} » (${map.author}) : elle est à toi.`);
+  }
+
+  /** Empreinte de la carte ouverte (celle que la sim et le serveur calculent), null si illisible. */
+  private currentHash(): string | null {
+    try {
+      return hashToHex(hashLevel(parseLevel(this.grid.rows(), [], this.map.name, '', this.map.mode)));
+    } catch {
+      return null;
+    }
+  }
+
   private loadInitial(): void {
     const id = this.store.currentId;
     const saved = (id && this.store.get(id)) || this.store.list()[0];
@@ -302,6 +345,7 @@ export class LevelEditor {
         h('button', { class: 'ed-btn', type: 'button', onclick: () => this.showMaps() }, 'Mes cartes'),
         h('button', { class: 'ed-btn', type: 'button', onclick: () => this.showImport() }, 'Importer'),
         h('button', { class: 'ed-btn', type: 'button', onclick: () => this.showExport() }, 'Exporter'),
+        h('button', { class: 'ed-btn ed-publish-btn', type: 'button', title: 'Partager la carte avec tous les joueurs', onclick: () => this.openPublish() }, 'Publier'),
       ),
       h('div', { class: 'ed-group' }, players, h('button', { class: 'ed-btn ed-play', type: 'button', title: 'Tester la carte (T)', onclick: () => this.test() }, '▶ Tester'), h('button', { class: 'ed-btn', type: 'button', onclick: () => this.close() }, 'Quitter')),
     );
@@ -328,7 +372,7 @@ export class LevelEditor {
       this.el.presetForm,
       this.el.issuesTitle,
       this.el.issues,
-      h('p', { class: 'ed-note', text: 'Carte perso : jeu local seulement (1 ou 2 joueurs). Le multijoueur en ligne joue les cartes officielles.' }),
+      h('p', { class: 'ed-note', text: 'Carte perso : jeu local (1 ou 2 joueurs). Publie-la dans le workshop pour la partager : tout le monde pourra la jouer, en ligne aussi.' }),
     );
 
     this.el.status = h('footer', { class: 'ed-status' });
@@ -612,7 +656,7 @@ export class LevelEditor {
           clear(actions);
           actions.append(
             current ? h('span', { class: 'ed-tag', text: 'ouverte' }) : h('button', { class: 'ed-btn', type: 'button', onclick: () => { this.setMap(this.store.get(m.id) ?? m); this.closeModal(); } }, 'Ouvrir'),
-            h('button', { class: 'ed-btn', type: 'button', onclick: () => { this.store.create({ ...m, name: this.store.freeName(`${m.name} (copie)`) }); fill(); } }, 'Dupliquer'),
+            h('button', { class: 'ed-btn', type: 'button', onclick: () => { this.store.create({ ...m, name: this.store.freeName(`${m.name} (copie)`) }, { parent: m.parent }); fill(); } }, 'Dupliquer'),
             h('button', { class: 'ed-btn danger', type: 'button', onclick: () => confirmDelete() }, 'Supprimer'),
           );
         };
@@ -637,7 +681,7 @@ export class LevelEditor {
           );
         };
         normal();
-        row.append(h('span', { class: 'ed-tag', text: `${m.mode === 'race' ? 'Course' : 'Arcade'} · ${m.rows[0]?.length ?? 0}×${m.rows.length}` }), name, actions);
+        row.append(h('span', { class: 'ed-tag', text: `${m.mode === 'race' ? 'Course' : 'Arcade'} · ${m.rows[0]?.length ?? 0}×${m.rows.length}${m.workshopId ? ' · publiée' : ''}` }), name, actions);
         list.append(row);
       }
     };
@@ -664,6 +708,83 @@ export class LevelEditor {
       h('h3', { class: 'ed-h', text: 'Partir d\'une carte officielle (copie)' }),
       officials,
     );
+  }
+
+  /** Publier dans le workshop : ce qui manque (erreurs, preuve, pseudo), puis l'envoi. */
+  openPublish(): void {
+    this.flushSave();
+    const ws = this.deps.workshop ?? null;
+    const box = this.openModal('Publier dans le workshop');
+    const body = h('div', { class: 'ed-publish' });
+    box.append(body);
+    const note = (text: string, bad = false): HTMLElement => h('p', { class: bad ? 'ed-note bad' : 'ed-note', text });
+    const show = (...nodes: (Node | null)[]): void => {
+      clear(body);
+      body.append(...nodes.filter((n): n is Node => n !== null));
+    };
+    const render = (): void => {
+      if (!ws) return show(note("Workshop indisponible ici : pas de serveur de cartes.", true));
+      const blocking = this.issues.filter((i) => i.severity === 'error');
+      if (blocking.length) return show(note('Corrige d\'abord ce qui empêche de jouer :', true), ...blocking.slice(0, 4).map((i) => note(`· ${i.message}`, true)));
+      if (!sanitizeMapName(this.map.name)) return show(note('Donne-lui un nom de 3 à 32 caractères (lettres, chiffres, espace, ponctuation simple), en haut à gauche.', true));
+      const hash = this.currentHash();
+      const proof = this.map.proof && this.map.proof.hash === hash ? this.map.proof : null;
+      if (!proof) {
+        return show(
+          note(this.map.mode === 'race' ? 'Pour publier, termine ta course une fois en test, seul et avec les params par défaut : ton replay prouve qu\'elle se termine, et ton temps ouvre son classement.' : 'Pour publier, vide ton arène une fois en test, seul et avec les params par défaut : ton replay prouve qu\'elle se termine.'),
+          this.map.proof ? note('Ta dernière preuve date d\'avant tes dernières retouches : elle ne vaut plus pour cette version.') : null,
+          h('div', { class: 'ed-row' }, h('button', { class: 'ed-btn ed-play', type: 'button', onclick: () => { this.closeModal(); this.setPlayers(1); this.test(); } }, '▶ Tester seul')),
+        );
+      }
+      const identity = ws.identity;
+      const pseudo = h('input', { class: 'ed-input', type: 'text', value: identity.identity.name ?? identity.suggestedName(), maxlength: NAME_MAX + 4, spellcheck: 'false', 'aria-label': 'Pseudo' }) as HTMLInputElement;
+      const status = h('p', { class: 'ed-note' });
+      const send = (asNew: boolean): void => {
+        if (!identity.identity.name || pseudo.value !== identity.identity.name) {
+          if (!identity.setName(pseudo.value)) {
+            status.textContent = `Pseudo invalide : 3 à ${NAME_MAX} caractères, lettres, chiffres, espace, - _ .`;
+            status.classList.add('bad');
+            return;
+          }
+          void identity.rename();
+        }
+        const map = this.map;
+        const update = !asNew && map.workshopId ? map.workshopId : undefined;
+        show(note('Envoi… le serveur rejoue ta partie sur ta carte.'));
+        void ws.publish({ name: map.name, mode: map.mode, theme: map.theme, rows: this.grid.rows() }, proof.replay, { id: update, parentId: update ? undefined : map.parent?.id }).then((res) => {
+          if (this.map !== map || !this.modal) return;
+          if (!res.ok) {
+            const gone = update !== undefined && /introuvable/.test(res.error);
+            return show(
+              note(res.error === 'hors ligne' ? 'Workshop hors ligne : la carte n\'est pas partie.' : `Refusée : ${res.error}.`, true),
+              h('div', { class: 'ed-row' }, gone ? h('button', { class: 'ed-btn ed-play', type: 'button', onclick: () => send(true) }, 'Publier comme nouvelle carte') : h('button', { class: 'ed-btn', type: 'button', onclick: () => render() }, 'Réessayer')),
+            );
+          }
+          map.workshopId = res.map.id;
+          this.store.save(map);
+          show(
+            h('p', { class: 'ed-note ok', text: res.created ? `« ${res.map.name} » est publiée : tout le monde la trouve dans le Workshop.` : `Version ${res.map.version} de « ${res.map.name} » en ligne.` }),
+            note(`Ton temps (${formatTime(res.map.authorTicks * DT)}) ouvre son classement.`),
+          );
+        });
+      };
+      show(
+        h('div', { class: 'ed-publish-sum' },
+          h('strong', { text: this.map.name }),
+          h('span', { class: 'ed-tag', text: `${this.map.mode === 'race' ? 'Course' : 'Arcade'} · ${THEME_LABEL[this.map.theme]} · ${this.grid.w} × ${this.grid.h}` }),
+          h('span', { class: 'ed-tag', text: `Preuve : terminée en ${formatTime(proof.ticks * DT)}` }),
+          this.map.parent ? h('span', { class: 'ed-tag', text: `D'après « ${this.map.parent.name} » de ${this.map.parent.author}` }) : null,
+        ),
+        h('label', { class: 'ed-label' }, 'Ton pseudo', pseudo),
+        this.map.workshopId ? note('Déjà publiée : « Mettre à jour » remplace la version en ligne. Si la géométrie a changé, son classement repart de zéro.') : note('Tout le monde pourra la jouer, la télécharger et en faire une copie. Tu pourras la mettre à jour ou la supprimer depuis ce navigateur.'),
+        h('div', { class: 'ed-row' },
+          h('button', { class: 'ed-btn ed-play', type: 'button', onclick: () => send(false) }, this.map.workshopId ? 'Mettre à jour' : 'Publier'),
+          this.map.workshopId ? h('button', { class: 'ed-btn', type: 'button', onclick: () => send(true) }, 'Publier comme nouvelle carte') : null,
+        ),
+        status,
+      );
+    };
+    render();
   }
 
   private showExport(): void {

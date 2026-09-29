@@ -5,8 +5,9 @@
  */
 import type { Game } from '../app/game';
 import { UNRANKED_LABEL } from '../app/replayRecorder';
-import { BIOMES, biomeInfo, DT, LEVEL_INFOS, LEVEL_MODE_LABEL, levelsIn, levelsOf, type LevelMode, type ReplayData } from '../sim';
+import { BIOMES, biomeInfo, DT, getLevel, LEVEL_INFOS, LEVEL_MODE_LABEL, levelsIn, levelsOf, type LevelMode, type ReplayData } from '../sim';
 import type { LeaderboardClient } from '../io/leaderboard';
+import type { WorkshopClient } from '../io/workshop';
 import { NAME_MAX, type BoardView, type SubmitResult } from '../net/scoresApi';
 import { h } from './dom';
 import { formatTime } from './hud';
@@ -16,7 +17,9 @@ export type BtnFactory = (label: string, onClick: () => void, extra?: Record<str
 
 type Run =
   | { kind: 'none' }
-  | { kind: 'unranked'; reason: string }
+  | { kind: 'unranked'; reason: string; proof: boolean }
+  /** Test de l'éditeur terminé comme il faut : ce temps sert de preuve pour publier. */
+  | { kind: 'proof'; ticks: number }
   | { kind: 'needName'; replay: ReplayData; error: string | null; draft: string | null }
   | { kind: 'sending'; replay: ReplayData }
   | { kind: 'done'; result: SubmitResult }
@@ -33,11 +36,23 @@ export class LeaderboardUi {
   private focusBiomeRow = false;
   /** Appelé quand un résultat réseau arrive : le menu redessine l'écran concerné. */
   onChange: (() => void) | null = null;
+  /** Test de l'éditeur terminé seul, params par défaut : l'éditeur garde le replay comme preuve. */
+  onProof: ((replay: ReplayData) => void) | null = null;
+  /** Où part le temps de la manche : classement officiel, ou celui d'une carte du workshop. */
+  private target: { kind: 'official' } | { kind: 'workshop'; id: string } = { kind: 'official' };
 
-  constructor(private readonly client: LeaderboardClient) {}
+  constructor(
+    private readonly client: LeaderboardClient,
+    private readonly workshop: WorkshopClient | null = null,
+  ) {}
 
   get playerName(): string | null {
     return this.client.identity.name;
+  }
+
+  /** La manche qui vient de finir est un test de l'éditeur réussi : on peut publier. */
+  get hasProof(): boolean {
+    return this.run.kind === 'proof';
   }
 
   // ------------------------------------------------------------------ fin de manche
@@ -46,8 +61,17 @@ export class LeaderboardUi {
   onComplete(game: Game): void {
     const rec = game.recorder;
     const replay = rec.replay(game.state);
+    const ctx = game.custom;
+    if (ctx?.kind === 'editor') {
+      if (replay) {
+        this.run = { kind: 'proof', ticks: replay.inputs.length };
+        this.onProof?.(replay);
+      } else this.run = rec.unranked ? { kind: 'unranked', reason: UNRANKED_LABEL[rec.unranked], proof: true } : { kind: 'none' };
+      return;
+    }
+    this.target = ctx?.kind === 'workshop' && this.workshop ? { kind: 'workshop', id: ctx.map.id } : { kind: 'official' };
     if (!replay) {
-      this.run = rec.unranked ? { kind: 'unranked', reason: UNRANKED_LABEL[rec.unranked] } : { kind: 'none' };
+      this.run = rec.unranked ? { kind: 'unranked', reason: UNRANKED_LABEL[rec.unranked], proof: false } : { kind: 'none' };
       return;
     }
     if (!this.client.identity.name) {
@@ -59,11 +83,13 @@ export class LeaderboardUi {
 
   private send(replay: ReplayData): void {
     this.run = { kind: 'sending', replay };
-    void this.client.submit(replay).then((res) => {
+    const t = this.target;
+    const req = t.kind === 'workshop' && this.workshop ? this.workshop.score(t.id, replay) : this.client.submit(replay);
+    void req.then((res) => {
       if (this.run.kind !== 'sending' || this.run.replay !== replay) return; // manche déjà oubliée
       if (res.ok) {
         this.run = { kind: 'done', result: res };
-        this.boards.set(res.level, { kind: 'ok', view: res });
+        if (t.kind === 'official') this.boards.set(res.level, { kind: 'ok', view: res });
       } else {
         this.run = { kind: 'error', replay, message: res.error };
       }
@@ -94,7 +120,17 @@ export class LeaderboardUi {
       case 'none':
         return null;
       case 'unranked':
-        return h('div', { class: 'lb-block' }, h('p', { class: 'lb-status', text: `Hors classement : ${r.reason}.` }));
+        return h(
+          'div',
+          { class: 'lb-block' },
+          h('p', { class: 'lb-status', text: r.proof ? `Pas de preuve pour publier (${r.reason}) : termine-la seul, avec les params par défaut.` : `Hors classement : ${r.reason}.` }),
+        );
+      case 'proof':
+        return h(
+          'div',
+          { class: 'lb-block' },
+          h('p', { class: 'lb-status lb-record', text: `Temps de référence enregistré (${formatTime(r.ticks * DT)}) : il prouve que ta carte se termine, tu peux la publier dans le workshop.` }),
+        );
       case 'needName': {
         const input = h('input', {
           type: 'text',
@@ -119,7 +155,7 @@ export class LeaderboardUi {
         return h(
           'div',
           { class: 'lb-block' },
-          h('p', { class: 'lb-lead', text: 'Ton temps peut entrer au classement mondial. Choisis ton pseudo (une seule fois, modifiable dans Paramètres).' }),
+          h('p', { class: 'lb-lead', text: `Ton temps peut entrer au classement ${this.target.kind === 'workshop' ? 'de cette carte' : 'mondial'}. Choisis ton pseudo (une seule fois, modifiable dans Paramètres).` }),
           input,
           r.error ? h('p', { class: 'lb-status lb-error', text: r.error }) : null,
           btn('Enregistrer mon temps', () => this.submitName(input.value), { 'data-nav-default': true }),
@@ -238,7 +274,11 @@ export class LeaderboardUi {
   }
 
   private table(view: BoardView, levelId: number): HTMLElement {
-    const race = LEVEL_INFOS[levelId]?.mode === 'race';
+    return this.renderTable(view, getLevel(levelId).mode === 'race');
+  }
+
+  /** Le top 10 (et ta place au-delà), pour une carte officielle ou du workshop. */
+  renderTable(view: BoardView, race: boolean): HTMLElement {
     const rows: HTMLElement[] = [
       h('div', { class: 'lb-row lb-head' }, h('span', { text: '#' }), h('span', { text: 'Pseudo' }), h('span', { text: race ? 'Temps' : 'Temps (tous éliminés)' })),
     ];

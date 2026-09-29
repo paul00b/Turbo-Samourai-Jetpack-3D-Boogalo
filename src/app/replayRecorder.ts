@@ -2,8 +2,9 @@
  * Enregistre la partie en cours pour le classement : les inputs réellement donnés à la sim, tick
  * par tick depuis le tick 0. Repart de zéro à chaque nouvelle sim (recommencer, changer de carte).
  *
- * Une partie n'est classée que si elle est jouée seul, hors ligne, sur une carte officielle, avec
- * les params par défaut du début à la fin. Sinon elle est marquée hors classement, avec la raison.
+ * Une partie n'est classée que si elle est jouée seul, hors ligne, sur une carte officielle (ou une
+ * carte perso qui compte : carte du workshop, ou test de l'éditeur dont le temps sert de preuve pour
+ * publier), avec les params par défaut du début à la fin. Sinon elle est marquée hors classement.
  */
 import {
   hashLevel,
@@ -42,7 +43,8 @@ export class ReplayRecorder {
   /** `officialLevels` : les cartes classées (les premières du registre, voir LEVEL_DEFS). */
   constructor(private readonly officialLevels: () => number = () => LEVEL_DEFS.length) {}
 
-  reset(state: GameState, online: boolean): void {
+  /** `customRanked` : la carte perso en cours compte (workshop, preuve de l'éditeur). */
+  reset(state: GameState, online: boolean, customRanked = false): void {
     this.n = 0;
     this.seed = state.seed >>> 0;
     this.levelId = state.levelId;
@@ -51,7 +53,7 @@ export class ReplayRecorder {
     this.unranked = null;
     if (online) this.unranked = 'online';
     else if (state.playerCount !== 1) this.unranked = 'players';
-    else if (state.levelId >= this.officialLevels()) this.unranked = 'custom';
+    else if (state.levelId >= this.officialLevels() && !customRanked) this.unranked = 'custom';
     else if (!isDefaultParams(state.params)) this.unranked = 'params';
   }
 

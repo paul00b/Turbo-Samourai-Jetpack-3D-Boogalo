@@ -12,7 +12,7 @@
  * grappin sans bouger la visée ne coûte presque rien.
  */
 import { DEFAULT_PARAMS, PARAM_KEYS, type SimParams } from './params';
-import { getLevel, LEVELS, type Level } from './level';
+import { CUSTOM_LEVEL_ID, getCustomLevel, getLevel, LEVELS, setCustomLevel, type Level } from './level';
 import { makeInput, unpackInput, type PlayerInput } from './input';
 import { createInitialState } from './state';
 import { step } from './step';
@@ -234,6 +234,27 @@ export type ReplayVerdict = { ok: true; finishTick: number } | { ok: false; reas
 export function verifyReplay(r: ReplayData, levelCount = LEVELS.length): ReplayVerdict {
   if (r.levelId < 0 || r.levelId >= levelCount || r.levelId >= LEVELS.length) return { ok: false, reason: 'carte inconnue' };
   if (hashLevel(getLevel(r.levelId)) !== r.levelHash) return { ok: false, reason: 'carte différente de celle du serveur' };
+  return replayToFinish(r);
+}
+
+/**
+ * Pareil sur une carte hors registre (le workshop) : le replay doit viser l'emplacement de la carte
+ * perso, avec l'empreinte de `level`. La carte est posée le temps du rejeu, qui est synchrone, puis
+ * celle d'avant est remise : rien d'autre ne peut s'intercaler, même dans un serveur partagé.
+ */
+export function verifyCustomReplay(r: ReplayData, level: Level): ReplayVerdict {
+  if (r.levelId !== CUSTOM_LEVEL_ID) return { ok: false, reason: 'carte inconnue' };
+  if (hashLevel(level) !== r.levelHash) return { ok: false, reason: 'carte différente de celle du serveur' };
+  const before = getCustomLevel();
+  setCustomLevel(level);
+  try {
+    return replayToFinish(r);
+  } finally {
+    setCustomLevel(before);
+  }
+}
+
+function replayToFinish(r: ReplayData): ReplayVerdict {
   if (r.paramsHash !== paramsHash(DEFAULT_PARAMS)) return { ok: false, reason: 'params modifiés' };
   const state = createInitialState(r.seed, 1, DEFAULT_PARAMS, r.levelId);
   const inp: PlayerInput = makeInput();

@@ -13,7 +13,7 @@ thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 494 tests : déterminisme, rollback, physique, réseau, classement, éditeur, garde-fou statique, direction artistique
+npm test             # 515 tests : déterminisme, rollback, physique, réseau, classement, workshop, éditeur, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
@@ -126,9 +126,12 @@ démarre toute seule à 2 joueurs.
 - L'état courant affiché est donc **spéculatif**. Ce qui est garanti identique des deux côtés, c'est
   l'état à un tick dont les deux machines ont tous les inputs confirmés : c'est exactement ce que
   vérifie `test/netcode.test.ts`.
-- **La config vient de l'hôte** : seed, carte et params sont envoyés à l'invité à l'arrivée.
-- **Protocole v2** (`PROTOCOL_VERSION`, jeu et relais) : la liste des cartes est passée à 12. Un
-  client v1 est refusé par le relais au lieu de rejoindre une partie sur une autre carte.
+- **La config vient de l'hôte** : seed, carte et params sont envoyés à l'invité à l'arrivée. Une
+  carte du workshop part avec (lignes et empreinte) : l'invité vérifie l'empreinte avant de jouer, et
+  annule la partie si la carte est arrivée abîmée plutôt que de désynchroniser.
+- **Protocole v3** (`PROTOCOL_VERSION`, jeu et relais) : les cartes du workshop se jouent en ligne. Un
+  client plus ancien est refusé par le relais au lieu de rejoindre une partie qu'il ne saurait pas
+  jouer.
 - **Params en cours de partie : datés, décidés par l'hôte.** Les params font partie de l'état simulé,
   donc un changement ne peut pas être immédiat : il prendrait effet à des ticks différents sur les
   deux machines et les ferait diverger. L'hôte diffuse donc *« ces params, au tick T »* avec
@@ -171,8 +174,8 @@ Ce qui manque pour un vrai jeu en ligne : la reconnexion après coupure et la d�
 
 Lancer une partie tient en quelques choix. Le **menu principal** propose les deux modes en grand,
 **Course** (atteindre l'arrivée le plus vite possible) et **Arcade** (éliminer tous les ennemis de la
-carte), puis Classements (les deux modes, carte par carte), Mes cartes (jouer ou modifier ses
-cartes perso), Éditeur, Multijoueur en ligne et Paramètres. Chaque mode propose le choix 1 ou 2
+carte), puis Classements (les deux modes, carte par carte), Workshop (les cartes des joueurs), Mes
+cartes (jouer ou modifier ses cartes perso), Éditeur, Multijoueur en ligne et Paramètres. Chaque mode propose le choix 1 ou 2
 joueurs, puis ses cartes : une carte = une partie.
 
 - **Course**, en deux temps : le **biome** (trois grandes cartes, chacune avec une vignette peinte par le
@@ -347,6 +350,7 @@ ses cartes, les tester dans le vrai jeu et les exporter vers `level.ts`.
 | Annuler / refaire | `Ctrl+Z` / `Ctrl+Y` (ou `Ctrl+Maj+Z`), 200 niveaux |
 | Vue | molette : zoom sur le curseur ; clic milieu ou `Espace` + glisser : déplacer ; flèches ; `+` / `-` ; `0` : cadrer ; `Maj` + molette : défiler |
 | Tester | `T` ou **▶ Tester** : la carte se lance dans le jeu (1 ou 2 joueurs locaux, thème choisi) ; **Pause → Retour à l'éditeur** revient exactement où on était |
+| Publier | **Publier** : envoie la carte dans le workshop, une fois terminée en test (voir Workshop) |
 
 **Presets** (`src/editor/presets.ts`, paramétrables dans le panneau de droite, aperçu fantôme, `R` ou
 clic droit pour le miroir) : lanterne, contrepoids (la tige monte jusqu'au plafond), plateforme, balcon
@@ -375,9 +379,8 @@ officielle (penser au thème dans `LEVEL_THEMES`). **Importer** accepte cet expo
 `level.ts` ou les lignes brutes de la carte.
 
 Côté sim, la carte testée occupe l'emplacement `CUSTOM_LEVEL_ID` (200, `setCustomLevel`) : `getLevel`
-la renvoie, mais `clampLevelId` l'ignore, donc elle n'est jamais enregistrée comme carte choisie ni
-envoyée à un pair. **Carte perso = jeu local uniquement** : le multijoueur en ligne joue les cartes
-officielles.
+la renvoie, mais `clampLevelId` l'ignore, donc elle n'est jamais enregistrée comme carte choisie. Une
+carte perso se joue en local ; une fois publiée dans le workshop, elle se joue aussi en ligne.
 
 ## Objectif, compteur d'ennemis et chrono
 
@@ -437,9 +440,9 @@ de la sienne, des params non par défaut, une manche qui ne se termine pas pile 
 (inputs coupés ou rajoutés), un replay illisible ou de plus de 10 minutes. Une carte modifiée change
 d'empreinte, donc de classement : les anciens temps ne s'y mélangent pas.
 
-**Ce qui est classé** : seul, hors ligne, sur une carte officielle, avec les params par défaut du
-début à la fin (`src/app/replayRecorder.ts` enregistre dans `Game` et repart de zéro à chaque
-recommencement ou changement de carte).
+**Ce qui est classé** : seul, hors ligne, sur une carte officielle ou une carte du workshop (chacune
+a son classement), avec les params par défaut du début à la fin (`src/app/replayRecorder.ts`
+enregistre dans `Game` et repart de zéro à chaque recommencement ou changement de carte).
 
 **Côté serveur** (`server/scores/`) : un handler pur (`handler.ts`) et deux stores, en mémoire
 (`store.ts`) et Upstash Redis par son API REST (`upstash.ts`, un simple `fetch`, aucune dépendance).
@@ -458,6 +461,50 @@ minute).
 - **En dev** : `npm run dev` sert `/api/scores` lui-même (plugin Vite, même handler), sur un store en
   mémoire perdu au redémarrage. Avec les variables Upstash dans l'environnement du shell, c'est
   Upstash qui sert, comme en prod.
+
+## Workshop
+
+**Menu → Workshop** : les cartes que les joueurs publient, pour tout le monde.
+
+- **Publier** (éditeur, bouton **Publier**, ou **Publier dans le workshop** à la fin d'un test) : la
+  carte doit être jouable (aucune erreur bloquante de l'éditeur) et **terminée une fois en test, seul,
+  params par défaut**. Ce replay est la preuve : le serveur le rejoue sur la carte envoyée
+  (`verifyCustomReplay`) et refuse la publication s'il ne va pas jusqu'au bout. Une carte que personne
+  n'a su finir n'entre pas. Toute retouche de la géométrie rend la preuve caduque. Le temps de
+  l'auteur ouvre le classement de la carte.
+- **Parcourir** : Récentes, Populaires (parties jouées, comptées une fois par joueur et par heure),
+  Les miennes ; filtre Tout / Course / Arcade ; un aperçu réduit de chaque carte (plein, vide, pics,
+  spawn, arrivée).
+- **Fiche d'une carte** : **Jouer** (1 ou 2 joueurs sur le même écran) ; **Jouer en ligne** (elle
+  devient la carte de ta session : ton ami la reçoit en rejoignant) ; son **classement** (top 10,
+  vérifié par rejeu comme les cartes officielles, un tableau par version de la géométrie) ; **Créer
+  une copie** (elle arrive dans Mes cartes avec « d'après X de Y » et s'ouvre dans l'éditeur ;
+  republiée, elle garde ce lien) ; **Télécharger** (l'export de l'éditeur en `.txt`, réimportable) ;
+  **Signaler**.
+- **Tes cartes** : **Modifier et republier** (même id, version suivante ; si la géométrie change, son
+  classement repart de zéro), **Supprimer**. Au plus 30 cartes publiées par joueur.
+- **Identité** : la même que le classement (uuid anonyme + pseudo, gardés dans le navigateur). C'est
+  elle qui fait de toi l'auteur : sur un autre navigateur, ou après avoir vidé le stockage du site, tu
+  ne peux plus modifier ni supprimer tes cartes publiées. Il n'y a pas de comptes.
+- **Modération** : noms de carte filtrés (lettres, chiffres, ponctuation simple, 3 à 32 caractères),
+  limitation de débit par IP (120 lectures, 6 publications, 12 temps par minute). Une carte signalée
+  par 3 joueurs différents quitte les listes (son auteur la voit encore). L'admin supprime n'importe
+  quelle carte avec la clé `WORKSHOP_ADMIN_KEY`.
+
+**Côté serveur** (`server/workshop/`, contrat partagé dans `src/net/workshopApi.ts`) : un handler pur
+(`handler.ts`) et deux stores, en mémoire (`store.ts`) et Upstash (`upstash.ts`), dans la même base que
+le classement. Une fiche JSON par carte (`ws:m:<id>`) et ses lignes à part (`ws:r:<id>`) : les listes
+ne lisent que les fiches. Des sorted sets pour les listes (`ws:recent:<mode>`, `ws:pop:<mode>`), un hash
+des parties (`ws:plays`), un set par auteur (`ws:by:<joueur>`), un set de signalements par carte.
+Classement d'une carte : `lb:ws:<id>:<empreinte>`. Une carte de 600 × 160 pèse ~96 Ko et une course
+officielle ~18 Ko : les 256 Mo de l'offre gratuite d'Upstash en gardent des milliers.
+
+- **En prod** : la fonction Vercel `api/workshop.ts`, avec les mêmes variables Upstash que le
+  classement (rien à ajouter). Option : `WORKSHOP_ADMIN_KEY`, une longue chaîne secrète, pour
+  supprimer une carte : `POST /api/workshop` avec `{ "action": "delete", "id": "<id>", "adminKey": "<clé>" }`.
+  `VITE_WORKSHOP_URL` pointe le jeu sur une autre adresse d'API (par défaut `api/workshop`).
+- **En dev** : `npm run dev` sert `/api/workshop` (le même plugin que le classement, stores en
+  mémoire, pseudos partagés).
 
 ## Son
 
@@ -491,6 +538,13 @@ première touche.
   cartes de course, sol mortel
   croissant dans chaque biome et au même palier d'un biome à l'autre. Les règles
   structurelles passent par `validateRows` (`src/sim/levelRules.ts`), le module que l'éditeur affiche.
+- `test/workshop.test.ts` : contrat (noms, contrôle des cartes envoyées, aperçu), rejeu sur une carte
+  perso, handler `/api/workshop` sur stores mémoire (publication avec preuve et refus sans, preuve d'une
+  autre carte ou coupée ; republication, classement remis à zéro quand la géométrie change ; copie et
+  carte d'origine ; plafond par joueur ; listes, parties dédoublonnées, filtres, pages ; classement
+  d'une carte ; signalements ; suppression par l'auteur et l'admin ; débit), store Upstash, et dans le
+  jeu : replay d'une carte du workshop accepté par le serveur, preuve de l'éditeur, carte abîmée
+  refusée, carte transmise à l'invité en ligne et gardée au recommencement.
 - `test/editor.test.ts` : outils de grille (rectangle, ligne, remplissage, spawn unique, copier-coller),
   annuler/refaire, redimensionnement, gabarits valides, chaque preset (dans la grille, miroir compris),
   export/import aller-retour, règles de validation (dont l'arrivée inaccessible et le passage étroit), carte perso jouable sur `CUSTOM_LEVEL_ID` et thème
@@ -652,6 +706,8 @@ continue de s'animer en pause.
 - Les cordes de la sim traversent les murs (pas d'enroulement autour des coins). À l'écran, seule une
   corde molle se pose sur les tuiles.
 - Pas de collision joueur-joueur (seulement la corde entre eux).
+- Workshop sans comptes : l'auteur d'une carte est reconnu par son navigateur. La modération se
+  limite aux signalements et à la suppression par l'admin.
 - Le feel dépend des valeurs par défaut de `DEFAULT_PARAMS` : elles sont un point de départ, pas un réglage final.
 - Le samouraï fait près de deux tuiles de haut pour une hitbox de 0,7 tuile : sa tête peut mordre un
   plafond au contact (le dessin se décale pour l'éviter en vol libre, pas quand il est accroché).

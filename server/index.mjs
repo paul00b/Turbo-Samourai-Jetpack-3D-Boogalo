@@ -16,7 +16,7 @@ import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 
 const PORT = Number(process.env.PORT ?? 8787);
-const PROTOCOL_VERSION = 2; // v2 : 12 cartes (courses par biome)
+const PROTOCOL_VERSION = 3; // v3 : les cartes du workshop se jouent en ligne
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 6;
 /** Une session vide (créée mais jamais rejointe) est ramassée au bout de ça. */

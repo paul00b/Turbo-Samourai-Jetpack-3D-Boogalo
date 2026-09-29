@@ -18,5 +18,5 @@
     "resolveJsonModule": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "test", "api", "server/scores"]
+  "include": ["src", "test", "api", "server/scores", "server/workshop"]
 }

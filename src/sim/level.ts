@@ -1111,6 +1111,11 @@ export function setCustomLevel(level: Level | null): void {
   customLevel = level;
 }
 
+/** La carte perso en place (null si aucune). */
+export function getCustomLevel(): Level | null {
+  return customLevel;
+}
+
 /**
  * Hors map = plein non accrochable, SAUF sous la carte : là c'est le vide (une colonne ouverte en
  * bas de carte est un gouffre, on y tombe et on meurt).

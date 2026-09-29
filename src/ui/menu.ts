@@ -26,11 +26,15 @@ import { clear, h } from './dom';
 import { EditorStore } from '../editor/store';
 import { formatTime } from './hud';
 import { FocusNav, MenuInput, type MenuAction } from './focusNav';
-import { LeaderboardClient } from '../io/leaderboard';
+import type { LeaderboardClient } from '../io/leaderboard';
+import type { WorkshopClient } from '../io/workshop';
+import type { WorkshopMap } from '../net/workshopApi';
+import type { ReplayData } from '../sim';
 import { LeaderboardUi, type BtnFactory } from './leaderboard';
+import { WorkshopUi, type WorkshopActions } from './workshop';
 import { biomeVignette } from './biomeArt';
 
-export type ScreenId = 'title' | 'race' | 'biome' | 'kills' | 'net' | 'controls' | 'settings' | 'pause' | 'complete' | 'board' | 'mymaps';
+export type ScreenId = 'title' | 'race' | 'biome' | 'kills' | 'net' | 'controls' | 'settings' | 'pause' | 'complete' | 'board' | 'mymaps' | 'workshop' | 'wsmap';
 
 /** Ce que promet chaque mode, sur sa carte du menu principal et en tête de son écran. */
 const MODE_LEAD: Record<LevelMode, string> = {
@@ -54,6 +58,9 @@ export interface MenuDeps {
   pads: GamepadManager;
   sfx: Sfx;
   audio: AudioEngine;
+  /** Identité et classement ; le workshop partage la même identité. */
+  leaderboard: LeaderboardClient;
+  workshop: WorkshopClient;
 }
 
 export class Menu {
@@ -67,7 +74,9 @@ export class Menu {
   private lastUpdate = 0;
   private padStatusTimer = 0;
   /** Classement mondial : bloc de fin de manche, écran Classement, pseudo (voir leaderboard.ts). */
-  private readonly lb = new LeaderboardUi(new LeaderboardClient());
+  private readonly lb: LeaderboardUi;
+  /** Workshop : liste des cartes publiées et fiche d'une carte (voir workshop.ts). */
+  private readonly ws: WorkshopUi;
   private boardMode: LevelMode = 'race';
   private readonly lbBtn: BtnFactory = (label, onClick, extra) => this.btn(label, onClick, extra);
   /** Branché par main.ts : ouvrir l'éditeur, y revenir après un test. */
@@ -78,6 +87,12 @@ export class Menu {
   /** Écran Classement ouvert depuis le menu principal : il propose les deux modes. */
   private boardFromTitle = false;
   returnToEditor: (() => void) | null = null;
+  /** Workshop : copier une carte dans l'éditeur (ou reprendre la sienne pour la republier). */
+  copyToEditor: ((map: WorkshopMap, asOwner: boolean) => void) | null = null;
+  /** Après un test réussi : retour à l'éditeur, fenêtre de publication ouverte. */
+  publishFromTest: (() => void) | null = null;
+  /** Un test de l'éditeur vient de se terminer comme il faut : la preuve pour publier. */
+  onProof: ((replay: ReplayData) => void) | null = null;
   /** Biome ouvert à l'étape 2 du sélecteur de course. */
   private biome: BiomeId = 'port';
   private previewTimer = 0;
@@ -87,6 +102,12 @@ export class Menu {
     private readonly deps: MenuDeps,
   ) {
     this.input = new MenuInput(deps.pads);
+    this.lb = new LeaderboardUi(deps.leaderboard, deps.workshop);
+    this.ws = new WorkshopUi(deps.workshop, this.lb);
+    this.lb.onProof = (r) => this.onProof?.(r);
+    this.ws.onChange = () => {
+      if (this.current === 'workshop' || this.current === 'wsmap') this.refresh();
+    };
     this.nav.onMove = () => deps.sfx.menuMove();
     this.nav.onFocus = (el) => this.previewFocused(el);
     clear(root);
@@ -228,6 +249,12 @@ export class Menu {
       case 'mymaps':
         el = this.buildMyMaps();
         break;
+      case 'workshop':
+        el = this.ws.listScreen(this.lbBtn, () => this.push('wsmap'), this.workshopActions(), () => this.back());
+        break;
+      case 'wsmap':
+        el = this.ws.detailScreen(this.lbBtn, this.workshopActions(), () => this.back());
+        break;
     }
     this.screens.set(id, el);
     this.root.append(el);
@@ -278,19 +305,23 @@ export class Menu {
       h('div', { class: 'mode-cards' }, card('race'), card('kills')),
       h(
         'div',
-        { class: 'menu-row title-more' },
+        { class: 'menu-row title-more tab-row' },
         this.btn('Classements', () => {
           this.boardFromTitle = true;
           this.boardMode = lastMode;
           this.lb.load(this.lb.boardFor(lastMode, s.levelId));
           this.push('board');
         }, { 'data-nav-row': 'more' }),
+        this.btn('Workshop', () => {
+          this.ws.reload();
+          this.push('workshop');
+        }, { 'data-nav-row': 'more' }),
         this.btn('Mes cartes', () => this.push('mymaps'), { 'data-nav-row': 'more' }),
         this.openEditor ? this.btn('Éditeur', () => this.openEditor?.(), { 'data-nav-row': 'more' }) : null,
       ),
       h(
         'div',
-        { class: 'menu-row title-more' },
+        { class: 'menu-row title-more tab-row' },
         this.btn('Multijoueur en ligne', () => this.push('net'), { class: 'menu-btn secondary', 'data-nav-row': 'more2' }),
         this.btn('Paramètres', () => this.push('settings'), { class: 'menu-btn secondary', 'data-nav-row': 'more2' }),
       ),
@@ -458,7 +489,7 @@ export class Menu {
           'div',
           { class: 'mymap-info' },
           h('span', { class: 'map-name', text: m.name }),
-          h('span', { class: 'map-sub', text: `${LEVEL_MODE_LABEL[m.mode]} · ${m.rows[0]?.length ?? 0} × ${m.rows.length}` }),
+          h('span', { class: 'map-sub', text: `${LEVEL_MODE_LABEL[m.mode]} · ${m.rows[0]?.length ?? 0} × ${m.rows.length}${m.workshopId ? ' · publiée dans le workshop' : ''}` }),
         ),
         this.btn('Jouer', () => this.playMap?.(m.id), { 'data-nav-group': `mymap-${i}`, 'data-nav-default': i === 0 }),
         this.btn('Modifier', () => this.openMap?.(m.id), { class: 'menu-btn secondary', 'data-nav-group': `mymap-${i}` }),
@@ -474,6 +505,30 @@ export class Menu {
         this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
       ),
     );
+  }
+
+  /** Ce que la fiche d'une carte du workshop peut faire. */
+  private workshopActions(): WorkshopActions {
+    return {
+      players: () => this.playersBlock(false),
+      play: (map) => {
+        if (!this.deps.game.startWorkshop(map, this.deps.settings.get().playerCount)) this.refresh();
+      },
+      playOnline: (map) => {
+        this.deps.net.hostMap = map;
+        this.push('net');
+      },
+      copy: (map, asOwner) => this.copyToEditor?.(map, asOwner),
+      openEditor: this.openEditor ? () => this.openEditor?.() : null,
+    };
+  }
+
+  /** Fin d'une carte du workshop : retour à sa fiche (classement à jour). */
+  private backToWorkshop(): void {
+    this.deps.game.endCustom();
+    this.push('workshop');
+    this.ws.refreshSelected();
+    this.push('wsmap');
   }
 
   /** Lance la carte (menu principal) ou relance la partie dessus (écran de fin). */
@@ -591,6 +646,18 @@ export class Menu {
     for (const l of lines) status.append(h('div', { text: l }));
 
     const codeBanner = net.code && net.status === 'waiting' ? h('div', { class: 'net-code', text: net.code }) : null;
+    const hostMap = net.hostMap;
+    const mapLine = hostMap
+      ? h(
+          'div',
+          { class: 'menu-block' },
+          h('p', { class: 'menu-note', text: `Carte de la session si tu héberges : « ${hostMap.name} » de ${hostMap.author} (workshop). Ton ami la reçoit en rejoignant.` }),
+          net.active ? null : this.btn('Jouer une carte officielle à la place', () => {
+            net.hostMap = null;
+            this.render();
+          }, { class: 'menu-btn secondary' }),
+        )
+      : null;
 
     return h(
       'div',
@@ -598,13 +665,14 @@ export class Menu {
       this.panel(
         'Multijoueur en ligne',
         h('div', { class: 'menu-row' }, h('span', { class: 'menu-label', text: 'Serveur' }), url),
+        mapLine,
         codeBanner,
         this.btn('Héberger une session', () => net.host(this.deps.settings.get().netUrl)),
         h('div', { class: 'menu-row' }, h('span', { class: 'menu-label', text: 'Code' }), code),
         this.btn('Rejoindre', () => net.join(this.deps.settings.get().netUrl, code.value)),
         net.status === 'idle' || net.status === 'closed' ? null : this.btn('Fermer la session', () => net.leave(), { class: 'menu-btn secondary' }),
         status,
-        h('p', { class: 'menu-note', text: 'La partie tourne en rollback : chacun joue son input avec 3 ticks de retard, les divergences sont recalculées. En ligne, la carte, la seed et les params sont ceux de l\'hôte et restent figés.' }),
+        h('p', { class: 'menu-note', text: 'La partie tourne en rollback : chacun joue son input avec 3 ticks de retard, les divergences sont recalculées. En ligne, la carte, la seed et les params sont ceux de l\'hôte et restent figés. Pour jouer une carte du workshop : sa fiche, puis « Jouer en ligne ».' }),
         this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
       ),
     );
@@ -747,7 +815,9 @@ export class Menu {
           ? this.btn("Retour à l'éditeur", () => this.returnToEditor?.(), { class: 'menu-btn secondary' })
           : net
             ? this.btn('Quitter la session en ligne', () => this.deps.net.leave(), { class: 'menu-btn secondary' })
-            : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
+            : g.workshopMap
+              ? this.btn('Retour au workshop', () => this.backToWorkshop(), { class: 'menu-btn secondary' })
+              : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
       ),
     );
   }
@@ -761,6 +831,7 @@ export class Menu {
     const time = formatTime(st.finishTick * DT);
     // Carte perso (éditeur) : pas dans LEVEL_INFOS, on lit la carte elle-même.
     const custom = g.customTest && this.returnToEditor !== null;
+    const workshop = g.workshopMap !== null && !net;
     const info = LEVEL_INFOS[st.levelId] ?? { title: getLevel(st.levelId).name, mode: getLevel(st.levelId).mode };
     const race = info?.mode === 'race';
     const perPlayer =
@@ -783,9 +854,20 @@ export class Menu {
         this.lb.completeBlock(this.lbBtn, st.levelId),
         guest ? h('p', { class: 'menu-note', text: 'En ligne, c\'est l\'hôte qui relance la manche ou change de carte.' }) : null,
         guest ? null : this.btn(race ? `Recommencer (${this.restartKeyLabel()})` : 'Recommencer le niveau', () => g.restart()),
-        custom ? this.btn("Retour à l'éditeur", () => this.returnToEditor?.()) : guest ? null : this.btn('Changer de carte', () => this.push(info?.mode ?? 'kills')),
+        custom && this.lb.hasProof && this.publishFromTest ? this.btn('Publier dans le workshop', () => this.publishFromTest?.()) : null,
+        custom
+          ? this.btn("Retour à l'éditeur", () => this.returnToEditor?.())
+          : workshop
+            ? this.btn('Retour au workshop', () => this.backToWorkshop())
+            : guest || g.workshopMap
+              ? null
+              : this.btn('Changer de carte', () => this.push(info?.mode ?? 'kills')),
         this.btn('Continuer à jouer', () => g.resumeAfterComplete(), { class: 'menu-btn secondary' }),
-        custom ? null : net ? this.btn('Quitter la session', () => this.deps.net.leave(), { class: 'menu-btn secondary' }) : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
+        custom
+          ? null
+          : net
+            ? this.btn('Quitter la session', () => this.deps.net.leave(), { class: 'menu-btn secondary' })
+            : this.btn('Quitter au menu', () => (workshop ? g.endCustom() : g.quitToMenu()), { class: 'menu-btn secondary' }),
       ),
     );
   }

@@ -2,7 +2,8 @@
  * Stockage Upstash Redis, par son API REST (un simple `fetch`, aucune dépendance) :
  *   - `lb:v1:<empreinte>` : sorted set, membre = playerId, score = meilleur temps en ticks ;
  *   - `lb:names` : hash playerId -> pseudo ;
- *   - `lb:rl:<ip>` : compteur de limitation de débit, avec expiration.
+ *   - `lb:rl:<ip>` : compteur de limitation de débit, avec expiration ;
+ *   - `lb:ws:<id>:<empreinte>` : tableau d'une carte du workshop (voir server/workshop).
  * Variables d'environnement : UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN.
  */
 import type { ScoreRow, ScoreStore } from './store';
@@ -23,7 +24,8 @@ export class UpstashStore implements ScoreStore {
     return url && token ? new UpstashStore(url.replace(/\/+$/, ''), token) : null;
   }
 
-  private async pipeline(cmds: Cmd[]): Promise<unknown[]> {
+  /** Envoie un lot de commandes (partagé avec le workshop, même base). */
+  async pipeline(cmds: Cmd[]): Promise<unknown[]> {
     const res = await this.fetchImpl(`${this.url}/pipeline`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
@@ -75,6 +77,10 @@ export class UpstashStore implements ScoreStore {
     if (playerIds.length === 0) return [];
     const [vals] = (await this.pipeline([['HMGET', 'lb:names', ...playerIds]])) as (string | null)[][];
     return playerIds.map((_, i) => vals?.[i] ?? null);
+  }
+
+  async drop(board: string): Promise<void> {
+    await this.pipeline([['DEL', board]]);
   }
 
   async hit(key: string, windowSec: number): Promise<number> {

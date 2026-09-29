@@ -9,6 +9,8 @@ import { GamepadManager } from './io/input/gamepad';
 import { InputMapper } from './io/input/inputMapper';
 import { KeyboardMouse } from './io/input/keyboardMouse';
 import { BuildsStore } from './io/buildsStore';
+import { LeaderboardClient } from './io/leaderboard';
+import { WorkshopClient } from './io/workshop';
 import { ParamsStore } from './io/paramsStore';
 import { SettingsStore } from './io/settings';
 import { Renderer } from './render/renderer';
@@ -63,15 +65,24 @@ async function boot(): Promise<void> {
   const game = new Game({ renderer, mapper, kbm, sfx, settings, params });
   const hud = new Hud(hudEl);
   const net = new NetGame({ game, settings, params });
-  const menu = new Menu(menuEl, { game, net, settings, kbm, pads, sfx, audio });
+  // Une seule identité de joueur (uuid + pseudo) pour le classement et le workshop.
+  const leaderboard = new LeaderboardClient();
+  const workshop = new WorkshopClient(leaderboard);
+  const menu = new Menu(menuEl, { game, net, settings, kbm, pads, sfx, audio, leaderboard, workshop });
   net.onChange = () => menu.refresh();
-  const editor = new LevelEditor(document.body, { game, settings });
+  const editor = new LevelEditor(document.body, { game, settings, workshop });
   editor.onOpen = () => menu.hide();
   editor.onClose = () => menu.showTitle();
   menu.openEditor = () => editor.open();
   menu.returnToEditor = () => editor.returnFromTest();
   menu.openMap = (id) => editor.openMap(id);
   menu.playMap = (id) => editor.playMap(id);
+  menu.copyToEditor = (map, asOwner) => editor.importWorkshop(map, asOwner);
+  menu.onProof = (replay) => editor.recordProof(replay);
+  menu.publishFromTest = () => {
+    editor.returnFromTest();
+    editor.openPublish();
+  };
   menu.refresh();
   const panels = new SidePanelHost(debugEl, settings);
   const debug = new DebugPanel(panels.add({ id: 'debug', label: 'DEBUG', title: 'F1' }), { game, settings, params, renderer });
@@ -79,7 +90,7 @@ async function boot(): Promise<void> {
   new BuildPanel(panels.add({ id: 'builds', label: 'BUILDS', title: 'F7' }), { game, params, builds });
   panels.restore();
   // Handle d'inspection (console navigateur, tests Playwright).
-  (window as unknown as { __tsj: unknown }).__tsj = { game, settings, params, builds, mapper, pads, kbm, audio, net, renderer };
+  (window as unknown as { __tsj: unknown }).__tsj = { game, settings, params, builds, mapper, pads, kbm, audio, net, renderer, workshop, editor };
 
   // Raccourcis debug globaux
   window.addEventListener('keydown', (e) => {

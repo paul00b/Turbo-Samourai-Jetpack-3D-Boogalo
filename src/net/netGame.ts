@@ -1,8 +1,10 @@
 /**
  * Colle entre la session réseau et le jeu : négocie la config (seed, carte, params), crée le
  * netcode, démarre les deux sims sur un état initial identique, et nettoie quand le pair s'en va.
+ * L'hôte peut choisir une carte du workshop (hostMap) : elle part dans la config, lignes comprises.
  */
-import { clampLevelId, PARAM_KEYS, type SimParams } from '../sim';
+import { clampLevelId, CUSTOM_LEVEL_ID, PARAM_KEYS, type SimParams } from '../sim';
+import type { WorkshopMap } from './workshopApi';
 import type { Game } from '../app/game';
 import type { ParamsStore } from '../io/paramsStore';
 import type { SettingsStore } from '../io/settings';
@@ -23,6 +25,8 @@ export class NetGame {
   message = '';
   /** Notifié à chaque changement d'état : le menu se redessine. */
   onChange: (() => void) | null = null;
+  /** Carte du workshop que l'hôte fera jouer (null : la carte officielle choisie). */
+  hostMap: WorkshopMap | null = null;
 
   constructor(private readonly deps: NetGameDeps) {
     this.session = new NetSession({
@@ -90,8 +94,17 @@ export class NetGame {
           this.stop('Version de protocole différente entre les deux joueurs.');
           break;
         }
+        const map = msg.levelId === CUSTOM_LEVEL_ID ? (msg.map ?? null) : null;
+        if (msg.levelId === CUSTOM_LEVEL_ID && !map) {
+          this.stop("L'hôte joue une carte qui n'a pas été transmise.");
+          break;
+        }
         this.applyConfig(msg.seed, msg.levelId, msg.params);
-        this.begin(1);
+        if (!this.begin(1, map)) {
+          this.session.close();
+          this.stop("La carte du workshop reçue de l'hôte est abîmée : partie annulée.");
+          break;
+        }
         this.session.sendPeer({ t: 'ready' });
         break;
       }
@@ -111,11 +124,12 @@ export class NetGame {
     this.onChange?.();
   }
 
-  private config(): { seed: number; levelId: number; params: Record<string, number> } {
+  private config(): { seed: number; levelId: number; params: Record<string, number>; map?: WorkshopMap } {
     const s = this.deps.settings.get();
     const p = this.deps.params.get();
     const params: Record<string, number> = {};
     for (const k of PARAM_KEYS) params[k] = p[k];
+    if (this.hostMap) return { seed: s.seed >>> 0, levelId: CUSTOM_LEVEL_ID, params, map: this.hostMap };
     return { seed: s.seed >>> 0, levelId: clampLevelId(s.levelId), params };
   }
 
@@ -123,17 +137,23 @@ export class NetGame {
     this.deps.params.replace(params as Partial<Record<keyof SimParams, unknown>>);
     this.deps.settings.update((st) => {
       st.seed = seed >>> 0;
-      st.levelId = clampLevelId(levelId);
+      if (levelId !== CUSTOM_LEVEL_ID) st.levelId = clampLevelId(levelId);
       st.playerCount = 2;
     });
   }
 
-  private begin(slot: number): void {
+  /** Démarre le netcode. Faux si la carte du workshop ne se charge pas (empreinte différente). */
+  private begin(slot: number, map: WorkshopMap | null = this.hostMap): boolean {
     this.deps.settings.update((st) => (st.playerCount = 2));
     this.play = new NetPlay(this.session, slot);
-    this.deps.game.startNet(this.play);
+    this.deps.game.startNet(this.play, map);
+    if (map && this.deps.game.workshopMap?.id !== map.id) {
+      this.play = null;
+      return false;
+    }
     this.message = '';
     this.onChange?.();
+    return true;
   }
 
   private stop(message: string): void {

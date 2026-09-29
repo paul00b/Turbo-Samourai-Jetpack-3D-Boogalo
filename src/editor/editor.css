@@ -266,3 +266,11 @@ select.ed-input { padding: 4px 6px; }
   .ed-body { grid-template-columns: 170px 1fr 220px; }
   .ed-name { width: 140px; }
 }
+
+/* Publier dans le workshop */
+.ed-publish-btn { border-color: rgba(224, 179, 90, 0.55); color: var(--gold); }
+.ed-publish { display: flex; flex-direction: column; gap: 10px; min-width: min(460px, 86vw); }
+.ed-publish-sum { display: flex; flex-direction: column; gap: 4px; padding: 10px; background: #10131c; border: 1px solid var(--line); border-radius: 2px; }
+.ed-publish-sum strong { font-family: var(--pixel); font-weight: normal; font-size: 16px; color: #fff; }
+.ed-publish .ed-label { display: flex; align-items: center; gap: 8px; }
+.ed-note.ok { color: var(--killer); }

@@ -2,7 +2,9 @@
  * Protocole de session. Le serveur (server/index.mjs) ne relaie que des enveloppes : il ne
  * connaît ni la sim, ni les inputs. Tout ce qui est "jeu" passe dans `relay.d` (PeerMsg).
  */
-export const PROTOCOL_VERSION = 2; // v2 : 12 cartes (courses par biome)
+import type { WorkshopMap } from './workshopApi';
+
+export const PROTOCOL_VERSION = 3; // v3 : les cartes du workshop se jouent en ligne
 
 /** 6 caractères, alphabet sans ambiguïté visuelle (ni O/0, ni I/1). */
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -20,8 +22,11 @@ export function normalizeCode(raw: string): string {
 }
 
 export type PeerMsg =
-  /** Hôte -> invité, à l'arrivée : tout ce dont la sim a besoin pour être identique. */
-  | { t: 'config'; version: number; seed: number; levelId: number; params: Record<string, number> }
+  /**
+   * Hôte -> invité, à l'arrivée : tout ce dont la sim a besoin pour être identique. Carte du
+   * workshop : `levelId` vaut l'id de la carte perso et `map` la transporte (lignes et empreinte).
+   */
+  | { t: 'config'; version: number; seed: number; levelId: number; params: Record<string, number>; map?: WorkshopMap }
   /** Invité -> hôte : config appliquée, je démarre. */
   | { t: 'ready' }
   /**
@@ -30,7 +35,10 @@ export type PeerMsg =
    * manche précédente encore en vol doivent être jetés (sinon ils squattent les slots du nouveau run).
    */
   | { t: 'in'; gen: number; first: number; inputs: number[] }
-  /** Hôte : nouvelle manche (recommencer ou changement de carte). Remet les deux sims à tick 0. */
+  /**
+   * Hôte : nouvelle manche (recommencer ou changement de carte). Remet les deux sims à tick 0.
+   * `levelId` = id de la carte perso : on rejoue la carte du workshop reçue avec la config.
+   */
   | { t: 'restart'; gen: number; seed: number; levelId: number }
   /**
    * Changement de params décidé par l'hôte, à appliquer EXACTEMENT au tick `tick` des deux côtés.

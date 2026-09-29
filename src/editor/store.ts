@@ -5,10 +5,24 @@
 import type { MapDoc } from './format';
 import type { MapMode } from './grid';
 import type { ThemeId } from '../render/art/themes/types';
+import type { WorkshopParent } from '../net/workshopApi';
+
+/** Preuve de fin : le replay (encodé) d'un test terminé seul, pour la géométrie d'empreinte `hash`. */
+export interface MapProof {
+  hash: string;
+  replay: string;
+  ticks: number;
+}
 
 export interface SavedMap extends MapDoc {
   id: string;
   updated: number;
+  /** Publiée dans le workshop sous cet id : publier à nouveau met à jour la version en ligne. */
+  workshopId?: string;
+  /** Copie d'une carte du workshop : on garde d'où elle vient. */
+  parent?: WorkshopParent;
+  /** Dernier test terminé comme il faut (seul, params par défaut) : ce qu'on envoie pour publier. */
+  proof?: MapProof;
 }
 
 const KEY = 'tsj.editor.maps.v1';
@@ -68,10 +82,15 @@ export class EditorStore {
     writeAll(readAll().filter((m) => m.id !== id));
   }
 
-  create(doc: MapDoc): SavedMap {
-    const map: SavedMap = { ...doc, rows: doc.rows.slice(), id: newId(), updated: Date.now() };
+  create(doc: MapDoc, extra: Pick<SavedMap, 'workshopId' | 'parent'> = {}): SavedMap {
+    const map: SavedMap = { name: doc.name, mode: doc.mode, theme: doc.theme, rows: doc.rows.slice(), ...extra, id: newId(), updated: Date.now() };
     this.save(map);
     return map;
+  }
+
+  /** La carte locale liée à cette carte publiée, s'il y en a une. */
+  byWorkshopId(workshopId: string): SavedMap | null {
+    return readAll().find((m) => m.workshopId === workshopId) ?? null;
   }
 
   /** Nom libre : « Ma carte », « Ma carte 2 »… */

@@ -7,9 +7,12 @@ import {
   cloneState,
   createInitialState,
   getLevel,
+  hashLevel,
   hashState,
   hashToHex,
   makeInput,
+  parseLevel,
+  setCustomLevel,
   StateHistory,
   step,
   TICK_RATE,
@@ -19,6 +22,8 @@ import {
   type SimParams,
 } from '../sim';
 import { INPUT_DELAY, PARAM_SYNC_DELAY, type NetPlay } from '../net/netPlay';
+import type { WorkshopMap } from '../net/workshopApi';
+import { setCustomTheme } from '../render/art/themes/painters';
 import type { InputMapper } from '../io/input/inputMapper';
 import type { KeyboardMouse } from '../io/input/keyboardMouse';
 import type { Sfx } from '../io/audio/sfx';
@@ -31,6 +36,26 @@ import { GameLoop } from './gameLoop';
 import { ReplayRecorder } from './replayRecorder';
 
 export type Phase = 'menu' | 'playing' | 'paused' | 'complete';
+
+/** Carte hors registre en cours : un test de l'éditeur, ou une carte du workshop. */
+export type CustomPlay = { kind: 'editor' } | { kind: 'workshop'; map: WorkshopMap };
+
+/**
+ * Pose une carte du workshop dans l'emplacement de la carte perso (sim + thème). Rend faux si ses
+ * lignes ne donnent pas l'empreinte annoncée (carte abîmée en route) : on ne la joue pas.
+ */
+export function useWorkshopLevel(map: WorkshopMap): boolean {
+  let level;
+  try {
+    level = parseLevel(map.rows, [], map.name, `Workshop · ${map.author}`, map.mode);
+  } catch {
+    return false;
+  }
+  if (hashToHex(hashLevel(level)) !== map.hash) return false;
+  setCustomLevel(level);
+  setCustomTheme(map.theme);
+  return true;
+}
 
 /** 3 s d'historique : assez pour un rollback réseau (~200 ms) avec une marge confortable. */
 export const HISTORY_TICKS = 180;
@@ -72,8 +97,10 @@ export class Game {
   /** L'écran de fin n'est proposé qu'une fois par manche (sinon « Continuer à jouer » le rouvre). */
   private completeShown = false;
   onPhase: ((phase: Phase) => void) | null = null;
-  /** Carte imposée hors réglages (la carte perso de l'éditeur, en test) ; null = la carte choisie. */
+  /** Carte imposée hors réglages (la carte perso : test de l'éditeur, workshop) ; null = la carte choisie. */
   private levelOverride: number | null = null;
+  /** Ce qu'est la carte perso en cours (null : carte officielle). */
+  custom: CustomPlay | null = null;
 
   constructor(private readonly deps: GameDeps) {
     const s = deps.settings.get();
@@ -97,7 +124,7 @@ export class Game {
     const levelId = forced ?? this.levelOverride ?? clampLevelId(s.levelId);
     this.state = createInitialState(s.seed, playerCount, this.deps.params.get(), levelId);
     this.prev = cloneState(this.state);
-    this.recorder.reset(this.state, this.net !== null);
+    this.recorder.reset(this.state, this.net !== null, this.custom !== null && levelId === CUSTOM_LEVEL_ID);
     this.deps.renderer.setLevel(getLevel(levelId));
     this.history.clear();
     for (const t of this.trails) t.clear();
@@ -118,17 +145,33 @@ export class Game {
   /** Test d'une carte de l'éditeur (setCustomLevel déjà appelé) : partie locale, réglages intacts. */
   startCustom(playerCount: number): void {
     this.levelOverride = CUSTOM_LEVEL_ID;
+    this.custom = { kind: 'editor' };
     this.start(playerCount);
+  }
+
+  /** Joue une carte du workshop (1 ou 2 joueurs, local). Faux si la carte ne se charge pas. */
+  startWorkshop(map: WorkshopMap, playerCount: number): boolean {
+    if (!useWorkshopLevel(map)) return false;
+    this.levelOverride = CUSTOM_LEVEL_ID;
+    this.custom = { kind: 'workshop', map };
+    this.start(playerCount);
+    return true;
   }
 
   /** Vrai pendant le test d'une carte de l'éditeur. */
   get customTest(): boolean {
-    return this.levelOverride !== null;
+    return this.custom?.kind === 'editor';
   }
 
-  /** Fin du test : retour à la carte choisie dans les réglages, au menu. */
+  /** La carte du workshop en cours (null sinon). */
+  get workshopMap(): WorkshopMap | null {
+    return this.custom?.kind === 'workshop' ? this.custom.map : null;
+  }
+
+  /** Fin de la carte perso (test, workshop) : retour à la carte choisie dans les réglages, au menu. */
   endCustom(): void {
     this.levelOverride = null;
+    this.custom = null;
     this.quitToMenu();
   }
 
@@ -141,18 +184,24 @@ export class Game {
   restart(): void {
     if (this.net) {
       if (!this.net.isHost) return;
-      this.net.broadcastRestart(this.deps.settings.get().seed, clampLevelId(this.deps.settings.get().levelId));
+      // Carte du workshop : l'invité l'a reçue avec la config, l'id de la carte perso suffit.
+      this.net.broadcastRestart(this.deps.settings.get().seed, this.levelOverride ?? clampLevelId(this.deps.settings.get().levelId));
     }
     this.start(this.state.playerCount);
   }
 
-  /** Invité : nouvelle manche ordonnée par l'hôte. */
+  /** Invité : nouvelle manche ordonnée par l'hôte (sur la carte du workshop de la session, ou une officielle). */
   netRestart(gen: number, seed: number, levelId: number): void {
     if (!this.net) return;
     this.net.resetForRestart(gen);
+    const custom = levelId === CUSTOM_LEVEL_ID && this.custom?.kind === 'workshop';
+    if (!custom) {
+      this.levelOverride = null;
+      this.custom = null;
+    }
     this.deps.settings.update((st) => {
       st.seed = seed >>> 0;
-      st.levelId = clampLevelId(levelId);
+      if (!custom) st.levelId = clampLevelId(levelId);
     });
     this.start(2);
   }
@@ -161,16 +210,25 @@ export class Game {
    * Démarre une partie en ligne. La config (seed, carte, params) a déjà été alignée sur celle de
    * l'hôte par NetGame : les deux machines créent donc le MÊME état initial.
    */
-  startNet(net: NetPlay): void {
+  startNet(net: NetPlay, map: WorkshopMap | null = null): void {
     this.net = net;
-    this.levelOverride = null; // une carte perso ne se joue pas en ligne
+    // Une carte du workshop se joue en ligne (les deux joueurs l'ont) ; un test de l'éditeur, non.
+    if (map && useWorkshopLevel(map)) {
+      this.levelOverride = CUSTOM_LEVEL_ID;
+      this.custom = { kind: 'workshop', map };
+    } else {
+      this.levelOverride = null;
+      this.custom = null;
+    }
     this.start(2);
   }
 
-  /** Fin de partie en ligne (pair parti, session fermée) : on retombe en local. */
+  /** Fin de partie en ligne (pair parti, session fermée) : on retombe en local, sur la carte choisie. */
   endNet(): void {
     if (!this.net) return;
     this.net = null;
+    this.levelOverride = null;
+    this.custom = null;
     this.quitToMenu();
   }
 
@@ -239,6 +297,7 @@ export class Game {
     if (this.net && !this.net.isHost) return; // en ligne, la carte est celle de l'hôte
     if (levelId === this.state.levelId && this.phase !== 'complete' && this.levelOverride === null) return;
     this.levelOverride = null;
+    this.custom = null;
     this.deps.settings.update((st) => (st.levelId = levelId));
     if (this.net) {
       this.net.broadcastRestart(this.deps.settings.get().seed, levelId);

@@ -20,6 +20,8 @@ export interface ScoreStore {
   names(playerIds: string[]): Promise<(string | null)[]>;
   /** Compteur de limitation de débit : incrémente la clé et retourne sa valeur sur la fenêtre. */
   hit(key: string, windowSec: number): Promise<number>;
+  /** Efface un tableau (carte du workshop supprimée ou dont la géométrie a changé). */
+  drop(board: string): Promise<void>;
 }
 
 /** En mémoire : `npm run dev` et les tests. Perdu au redémarrage. */
@@ -69,6 +71,10 @@ export class MemoryStore implements ScoreStore {
 
   async names(playerIds: string[]): Promise<(string | null)[]> {
     return playerIds.map((id) => this.nameMap.get(id) ?? null);
+  }
+
+  async drop(board: string): Promise<void> {
+    this.boards.delete(board);
   }
 
   async hit(key: string, windowSec: number): Promise<number> {
