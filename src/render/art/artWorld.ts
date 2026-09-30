@@ -16,6 +16,7 @@ import { chunkTextures, destroyChunks, refreshTexture, subTexture, textureFromBu
 import type { ThemeModule } from './themes/runtime';
 import type { PropInstance } from './themes/types';
 import { PAD } from './themes/floorKit';
+import { paintSigns } from './signs';
 
 export interface PropTextures {
   frames: Texture[];
@@ -26,6 +27,8 @@ export interface PropTextures {
 
 export interface LevelArt {
   back: Chunk[];
+  /** Panneaux écrits (tutoriel) : entre le décor arrière et les tuiles. */
+  signs: Chunk[];
   tiles: Chunk[];
   hazards: Chunk[];
   front: Chunk[];
@@ -97,10 +100,16 @@ export class ArtWorld {
       front: () => (front ??= new Buf(shape.pw, shape.ph)),
     });
     props.sort((a, b) => a.x - b.x);
+    let signs: Buf | null = null;
+    if (level.signs && level.signs.length > 0) {
+      signs = new Buf(shape.pw, shape.ph);
+      paintSigns(signs, level.signs);
+    }
     if (this.art) this.disposeArt(this.art);
     const frontBuf = front as Buf | null;
     this.art = {
       back: chunkTextures(back, 'lvl-back'),
+      signs: signs ? chunkTextures(signs, 'lvl-signs') : [],
       tiles: chunkTextures(tiles, 'lvl-tiles'),
       hazards: chunkTextures(hazards, 'lvl-hazards'),
       front: frontBuf ? chunkTextures(frontBuf, 'lvl-front') : [],
@@ -137,6 +146,7 @@ export class ArtWorld {
 
   private disposeArt(a: LevelArt): void {
     destroyChunks(a.back);
+    destroyChunks(a.signs);
     destroyChunks(a.tiles);
     destroyChunks(a.hazards);
     destroyChunks(a.front);

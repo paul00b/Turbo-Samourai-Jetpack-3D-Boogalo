@@ -13,7 +13,7 @@ thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 515 tests : déterminisme, rollback, physique, réseau, classement, workshop, éditeur, garde-fou statique, direction artistique
+npm test             # 522 tests : déterminisme, rollback, physique, réseau, classement, workshop, tutoriel, éditeur, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
@@ -172,7 +172,8 @@ Ce qui manque pour un vrai jeu en ligne : la reconnexion après coupure et la d�
 
 ## Menus
 
-Lancer une partie tient en quelques choix. Le **menu principal** propose les deux modes en grand,
+Lancer une partie tient en quelques choix. À la première visite, le **tutoriel** est en tête de
+l'accueil (avec le focus) ; une fois lancé, il reste accessible par un bouton en bas. Le **menu principal** propose les deux modes en grand,
 **Course** (atteindre l'arrivée le plus vite possible) et **Arcade** (éliminer tous les ennemis de la
 carte), puis Classements (les deux modes, carte par carte), Workshop (les cartes des joueurs), Mes
 cartes (jouer ou modifier ses cartes perso), Éditeur, Multijoueur en ligne et Paramètres. Chaque mode propose le choix 1 ou 2
@@ -194,6 +195,30 @@ joueurs, puis ses cartes : une carte = une partie.
   chaque joueur), et les **outils de debug**, masqués par défaut.
 - À l'arrivée (ou quand le dernier ennemi tombe), l'écran de fin propose Recommencer, Changer de
   carte (la liste du même mode), Continuer à jouer et Quitter au menu.
+
+## Tutoriel
+
+**Accueil → Tutoriel.** Une carte d'ateliers (`src/app/tutorial.ts`), avec ce qu'il faut faire écrit
+dans le décor, juste au-dessus de la tête : bienvenue et marche, jetpack (pas de saut : c'est lui qui
+envole), grappin, balancier, se projeter, élan + jetpack, enchaîner deux grappins, lisse ou
+accrochable, tremplin, ennemi, dangers, arrivée. On y reste autant qu'on veut : l'arrivée propose de
+continuer à s'entraîner, de recommencer, ou de lancer une course.
+
+- **Tes touches** : les panneaux écrivent les commandes du joueur 1 au lancement (clavier ou manette,
+  remappages compris, disposition réelle via `navigator.keyboard` ; sans elle, AZERTY supposé en
+  français), en bleu.
+- **Points de reprise** : chaque atelier atteint au sol devient le lieu de réapparition. Une mort
+  (pics, vide, mur pris trop vite, trois coups d'ennemi) ramène au dernier atelier, pas au début ;
+  **R** recommence tout. Le HUD dit l'atelier en cours (« Atelier 3 / 11 · Grappin »).
+- **Hors classement**, en local (1 ou 2 joueurs sur le même écran), dans l'emplacement de la carte
+  perso. Les points de reprise déplacent le spawn de la carte entre deux ticks : sans replay ni pair
+  en ligne, ça ne gêne pas le déterminisme.
+- **Rendu** : une police pixel 5 × 7 (`src/render/pixel/font.ts` : majuscules, chiffres, accents
+  français, flèches) et des panneaux (`src/render/art/signs.ts`) cuits une fois, dans un calque entre
+  le décor arrière et les tuiles. `Level.signs` et `Level.stations` ne servent qu'au rendu : ni la sim
+  ni l'empreinte de la carte ne les lisent.
+- La carte respecte toutes les règles de l'éditeur sans un avertissement, et le bot d'exploration la
+  termine (15 à 18 s sur trois graines), sans jamais traverser un mur.
 
 ## Multijoueur local
 
@@ -545,6 +570,11 @@ première touche.
   d'une carte ; signalements ; suppression par l'auteur et l'admin ; débit), store Upstash, et dans le
   jeu : replay d'une carte du workshop accepté par le serveur, preuve de l'éditeur, carte abîmée
   refusée, carte transmise à l'invité en ligne et gardée au recommencement.
+- `test/tutorial.test.ts` : carte du tutoriel (règles de l'éditeur sans avertissement, un point de
+  reprise par atelier posé au sol, panneaux qui ne mordent aucune tuile ni ne se chevauchent, au
+  clavier comme à la manette), touches écrites sur les panneaux, police pixel (proportionnelle,
+  accents, couleur des touches), et dans le vrai `Game` : atelier atteint = point de reprise, mort
+  dans les pics = retour au dernier atelier, recommencer = retour au début, hors classement.
 - `test/editor.test.ts` : outils de grille (rectangle, ligne, remplissage, spawn unique, copier-coller),
   annuler/refaire, redimensionnement, gabarits valides, chaque preset (dans la grille, miroir compris),
   export/import aller-retour, règles de validation (dont l'arrivée inaccessible et le passage étroit), carte perso jouable sur `CUSTOM_LEVEL_ID` et thème

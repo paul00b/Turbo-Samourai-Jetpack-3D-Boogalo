@@ -80,6 +80,18 @@ export class WorldView {
       t.position.set(l.x * TILE_SIZE, l.y * TILE_SIZE);
       this.labels.addChild(t);
     }
+    // Panneaux du tutoriel : le rendu pixel les cuit dans l'art ; le grey-box les écrit ici.
+    if (!this.overlay) {
+      for (const sign of level.signs ?? []) {
+        const text = [sign.title, ...sign.lines].filter((l) => l.length > 0).join('\n').replace(/[{}]/g, '');
+        const t = new Text({
+          text,
+          style: { fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: 18, fill: 0xd8dde6, fontWeight: '600', lineHeight: 24 },
+        });
+        t.position.set(sign.x * TILE_SIZE, sign.y * TILE_SIZE);
+        this.labels.addChild(t);
+      }
+    }
   }
 
   /** Zone d'arrivée : damier vert translucide + montants pleins, lisible de loin. */

@@ -16,7 +16,9 @@ import {
   StateHistory,
   step,
   TICK_RATE,
+  TILE_SIZE,
   type GameState,
+  type Level,
   type PlayerInput,
   type SimEvent,
   type SimParams,
@@ -24,6 +26,7 @@ import {
 import { INPUT_DELAY, PARAM_SYNC_DELAY, type NetPlay } from '../net/netPlay';
 import type { WorkshopMap } from '../net/workshopApi';
 import { setCustomTheme } from '../render/art/themes/painters';
+import type { ThemeId } from '../render/art/themes/types';
 import type { InputMapper } from '../io/input/inputMapper';
 import type { KeyboardMouse } from '../io/input/keyboardMouse';
 import type { Sfx } from '../io/audio/sfx';
@@ -37,8 +40,16 @@ import { ReplayRecorder } from './replayRecorder';
 
 export type Phase = 'menu' | 'playing' | 'paused' | 'complete';
 
-/** Carte hors registre en cours : un test de l'éditeur, ou une carte du workshop. */
-export type CustomPlay = { kind: 'editor' } | { kind: 'workshop'; map: WorkshopMap };
+/**
+ * Carte hors registre en cours : un test de l'éditeur, une carte du workshop, ou le tutoriel (avec
+ * ses points de reprise : `reached` = dernier atteint, `start` = le spawn d'origine).
+ */
+export type CustomPlay =
+  | { kind: 'editor' }
+  | { kind: 'workshop'; map: WorkshopMap }
+  | { kind: 'tutorial'; level: Level; checkpoints: readonly number[]; reached: number; start: { x: number; y: number } };
+
+export type TutorialPlay = Extract<CustomPlay, { kind: 'tutorial' }>;
 
 /**
  * Pose une carte du workshop dans l'emplacement de la carte perso (sim + thème). Rend faux si ses
@@ -121,10 +132,12 @@ export class Game {
   newSim(playerCount: number, forced?: number): void {
     const s = this.deps.settings.get();
     this.completeShown = false;
+    if (this.custom?.kind === 'tutorial') this.resetTutorial(this.custom);
     const levelId = forced ?? this.levelOverride ?? clampLevelId(s.levelId);
     this.state = createInitialState(s.seed, playerCount, this.deps.params.get(), levelId);
     this.prev = cloneState(this.state);
-    this.recorder.reset(this.state, this.net !== null, this.custom !== null && levelId === CUSTOM_LEVEL_ID);
+    // Une carte perso ne compte que si c'est une carte du workshop ou la preuve d'un test d'éditeur.
+    this.recorder.reset(this.state, this.net !== null, (this.custom?.kind === 'workshop' || this.custom?.kind === 'editor') && levelId === CUSTOM_LEVEL_ID);
     this.deps.renderer.setLevel(getLevel(levelId));
     this.history.clear();
     for (const t of this.trails) t.clear();
@@ -156,6 +169,49 @@ export class Game {
     this.custom = { kind: 'workshop', map };
     this.start(playerCount);
     return true;
+  }
+
+  /**
+   * Le tutoriel : une carte d'ateliers hors classement, jouée seul ou à deux sur le même écran.
+   * `checkpoints` : colonnes (tuiles) des points de reprise, dans l'ordre.
+   */
+  startTutorial(level: Level, checkpoints: readonly number[], theme: ThemeId, playerCount: number): void {
+    setCustomLevel(level);
+    setCustomTheme(theme);
+    this.levelOverride = CUSTOM_LEVEL_ID;
+    this.custom = { kind: 'tutorial', level, checkpoints, reached: 0, start: { x: level.spawnX, y: level.spawnY } };
+    this.start(playerCount);
+  }
+
+  /** Vrai pendant le tutoriel. */
+  get tutorial(): boolean {
+    return this.custom?.kind === 'tutorial';
+  }
+
+  /** Recommencer le tutoriel : retour au tout premier atelier. */
+  private resetTutorial(t: TutorialPlay): void {
+    t.reached = 0;
+    t.level.spawnX = t.start.x;
+    t.level.spawnY = t.start.y;
+  }
+
+  /**
+   * Point de reprise : un joueur posé au sol au-delà d'un atelier en fait le lieu de réapparition.
+   * La sim relit le spawn de la carte à chaque mort ; hors ligne et hors classement, déplacer ce
+   * spawn entre deux ticks ne gêne personne (aucun replay, aucun pair à garder en phase).
+   */
+  private tutorialCheckpoint(t: TutorialPlay): void {
+    for (let i = 0; i < this.state.playerCount; i++) {
+      const pl = this.state.players[i];
+      if (!pl.grounded) continue;
+      let k = t.reached;
+      while (k + 1 < t.checkpoints.length && t.checkpoints[k + 1] * TILE_SIZE <= pl.x) k++;
+      if (k > t.reached) {
+        t.reached = k;
+        t.level.spawnX = t.checkpoints[k] * TILE_SIZE + TILE_SIZE / 2;
+        t.level.spawnY = t.start.y;
+      }
+    }
   }
 
   /** Vrai pendant le test d'une carte de l'éditeur. */
@@ -371,6 +427,7 @@ export class Game {
     const inputs = this.deps.mapper.sample(this.state, this.deps.renderer);
     if (!this.state.finished) this.recorder.record(inputs[0]);
     this.advanceOneTick(inputs);
+    if (this.custom?.kind === 'tutorial') this.tutorialCheckpoint(this.custom);
     return true;
   };
 

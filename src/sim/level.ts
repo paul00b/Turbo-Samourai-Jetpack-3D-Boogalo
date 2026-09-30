@@ -745,6 +745,21 @@ export interface Level {
   labels: readonly ZoneLabel[];
   /** Non nul uniquement en mode 'race'. */
   goal: GoalRect | null;
+  /**
+   * Panneaux écrits dans le décor (le tutoriel). Rendu seulement : ni la sim ni l'empreinte de la
+   * carte ne les lisent.
+   */
+  signs?: readonly LevelSign[];
+  /** Ateliers du tutoriel (colonne de départ en px, nom) : le HUD dit où l'on en est. Rendu seulement. */
+  stations?: readonly { x: number; name: string }[];
+}
+
+/** Un panneau peint dans le décor : coin haut-gauche en tuiles, un titre (facultatif) et des lignes. */
+export interface LevelSign {
+  x: number;
+  y: number;
+  title: string;
+  lines: readonly string[];
 }
 
 /** Biome d'une carte : il choisit son thème (habillage, fond vivant) et la range dans le menu. */

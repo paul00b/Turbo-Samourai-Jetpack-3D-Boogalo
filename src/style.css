@@ -130,6 +130,9 @@ body.debug-open #hud, body.debug-open #menu { right: 360px; }
 .mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .menu-btn.mode-card { display: flex; flex-direction: column; gap: 8px; padding: 20px 20px 18px; min-height: 118px; background: rgba(17, 20, 30, 0.94); border-left-width: 4px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); }
 .menu-btn.mode-card.focused { background: #1a1f2d; }
+/* Accueil : le tutoriel en tête pour une première visite (une seule carte, sur toute la largeur). */
+.menu-btn.tuto-card { width: 100%; min-height: 0; margin-bottom: 12px; border-left-color: var(--gold); }
+.menu-btn.tuto-card .mode-name { color: var(--gold); }
 .mode-name { font-size: 30px; letter-spacing: 0.1em; text-transform: uppercase; color: #fff; text-shadow: 0 2px 0 #000; }
 .mode-card.focused .mode-name { color: var(--gold); }
 .mode-lead { font-family: var(--body); font-size: 15px; line-height: 1.4; color: var(--text); }

@@ -62,6 +62,10 @@ export class LeaderboardUi {
     const rec = game.recorder;
     const replay = rec.replay(game.state);
     const ctx = game.custom;
+    if (ctx?.kind === 'tutorial') {
+      this.run = { kind: 'none' };
+      return;
+    }
     if (ctx?.kind === 'editor') {
       if (replay) {
         this.run = { kind: 'proof', ticks: replay.inputs.length };

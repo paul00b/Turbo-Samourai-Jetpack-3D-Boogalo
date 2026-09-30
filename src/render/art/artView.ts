@@ -4,7 +4,8 @@
  * puis le PixelQuad l'agrandit à l'écran avec le reste sous-pixel de la caméra.
  *
  * Ordre des couches (du fond vers l'avant) :
- *   fond du thème -> décor arrière cuit -> accessoires arrière -> tuiles -> milieu du thème (brumes)
+ *   fond du thème -> décor arrière cuit -> accessoires arrière -> panneaux (tutoriel) -> tuiles
+ *   -> milieu du thème (brumes)
  *   -> dangers -> traînée -> ennemis -> halo -> cordes -> joueurs -> particules -> décor avant
  *   -> premier plan du thème (pluie, braises : s'écarte du perso).
  */
@@ -54,6 +55,7 @@ export class ArtView {
   private readonly worldFront = new Container();
   private readonly backChunks = new Container();
   private readonly propsBack = new Container();
+  private readonly signChunks = new Container();
   private readonly tileChunks = new Container();
   private readonly hazardChunks = new Container();
   private readonly trail = new Graphics();
@@ -91,7 +93,7 @@ export class ArtView {
     this.rt = RenderTexture.create({ width: 64, height: 64, resolution: 1, scaleMode: 'linear', antialias: false });
     this.quad = new PixelQuad(this.rt);
     this.display.addChild(this.quad.mesh);
-    this.worldBack.addChild(this.backChunks, this.propsBack, this.tileChunks);
+    this.worldBack.addChild(this.backChunks, this.propsBack, this.signChunks, this.tileChunks);
     this.worldFront.addChild(this.hazardChunks, this.trail, this.enemies, this.halos, this.ropeBatch.g, this.heroes, this.particles, this.frontChunks, this.propsFront, this.overlay);
   }
 
@@ -109,7 +111,7 @@ export class ArtView {
 
   private rebuild(world: ArtWorld): void {
     this.version = world.version;
-    for (const c of [this.backChunks, this.tileChunks, this.hazardChunks, this.frontChunks]) c.removeChildren();
+    for (const c of [this.backChunks, this.signChunks, this.tileChunks, this.hazardChunks, this.frontChunks]) c.removeChildren();
     this.chunkSprites = [];
     const art = world.art;
     if (!art) return;
@@ -122,6 +124,7 @@ export class ArtView {
       }
     };
     add(art.back, this.backChunks);
+    add(art.signs, this.signChunks);
     add(art.tiles, this.tileChunks);
     add(art.hazards, this.hazardChunks);
     add(art.front, this.frontChunks);

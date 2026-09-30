@@ -214,6 +214,14 @@ export function restartHint(settings: Settings): string {
 /** Objectif courant : progression vers l'arrivée (course), ou stock d'ennemis (arcade). */
 export function objectiveText(state: GameState): string {
   const level = getLevel(state.levelId);
+  if (level.stations && level.stations.length > 0) {
+    // Tutoriel : l'atelier où se trouve le joueur le plus avancé.
+    let best = 0;
+    for (let i = 0; i < state.playerCount; i++) best = Math.max(best, state.players[i].x);
+    let k = 0;
+    for (let i = 0; i < level.stations.length; i++) if (level.stations[i].x <= best) k = i;
+    return `Atelier ${k + 1} / ${level.stations.length} · ${level.stations[k].name}`;
+  }
   if (level.mode === 'race') {
     if (state.finished) return '🏁 arrivée franchie';
     const goal = level.goal;

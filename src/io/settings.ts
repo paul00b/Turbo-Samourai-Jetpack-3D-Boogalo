@@ -87,6 +87,8 @@ export interface Settings {
   netUrlCustom: boolean;
   /** Dernier code saisi, pour ne pas le retaper. */
   netLastCode: string;
+  /** Le tutoriel a déjà été lancé : l'accueil ne le met plus en avant. */
+  tutorialSeen: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -110,6 +112,7 @@ export const DEFAULT_SETTINGS: Settings = {
   netUrl: defaultNetUrl(),
   netUrlCustom: false,
   netLastCode: '',
+  tutorialSeen: false,
 };
 
 /**
@@ -275,6 +278,7 @@ function mergeSettings(base: Settings, parsed: Partial<Settings>): Settings {
     out.netUrlCustom = parsed.netUrlCustom === true;
   }
   if (typeof parsed.netLastCode === 'string') out.netLastCode = parsed.netLastCode.slice(0, 6);
+  if (typeof parsed.tutorialSeen === 'boolean') out.tutorialSeen = parsed.tutorialSeen;
   return out;
 }
 

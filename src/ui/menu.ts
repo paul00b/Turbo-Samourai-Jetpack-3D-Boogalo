@@ -33,6 +33,7 @@ import type { ReplayData } from '../sim';
 import { LeaderboardUi, type BtnFactory } from './leaderboard';
 import { WorkshopUi, type WorkshopActions } from './workshop';
 import { biomeVignette } from './biomeArt';
+import { buildTutorialLevel, TUTORIAL_CHECKPOINTS, TUTORIAL_THEME, tutorialKeys } from '../app/tutorial';
 
 export type ScreenId = 'title' | 'race' | 'biome' | 'kills' | 'net' | 'controls' | 'settings' | 'pause' | 'complete' | 'board' | 'mymaps' | 'workshop' | 'wsmap';
 
@@ -294,14 +295,27 @@ export class Menu {
       return this.btn(
         [h('span', { class: 'mode-name', text: LEVEL_MODE_LABEL[mode] }), h('span', { class: 'mode-lead', text: MODE_LEAD[mode] })],
         () => this.push(mode),
-        { class: `menu-btn mode-card mode-${mode}`, 'data-nav-row': 'modes', 'data-nav-default': mode === lastMode },
+        { class: `menu-btn mode-card mode-${mode}`, 'data-nav-row': 'modes', 'data-nav-default': s.tutorialSeen && mode === lastMode },
       );
     };
     this.schedulePreview(s.levelId);
+    // Première visite : le tutoriel en tête, avec le focus. Ensuite, un simple bouton en bas.
+    const fresh = !s.tutorialSeen;
+    const tuto = fresh
+      ? this.btn(
+          [
+            h('span', { class: 'mode-name', text: 'Tutoriel' }),
+            h('span', { class: 'mode-lead', text: 'Première fois ? Toutes les mécaniques du jeu, écrites dans le décor : à essayer à ton rythme, autant que tu veux.' }),
+          ],
+          () => this.startTutorial(),
+          { class: 'menu-btn mode-card tuto-card', 'data-nav-row': 'tuto', 'data-nav-default': true },
+        )
+      : null;
     return h(
       'div',
       { class: 'menu-screen title-screen' },
       h('h1', { class: 'game-title' }, 'TURBO-SAMOURAÏ', h('br'), 'JETPACK 3D BOOGALOO'),
+      tuto,
       h('div', { class: 'mode-cards' }, card('race'), card('kills')),
       h(
         'div',
@@ -322,6 +336,7 @@ export class Menu {
       h(
         'div',
         { class: 'menu-row title-more tab-row' },
+        fresh ? null : this.btn('Tutoriel', () => this.startTutorial(), { class: 'menu-btn secondary', 'data-nav-row': 'more2' }),
         this.btn('Multijoueur en ligne', () => this.push('net'), { class: 'menu-btn secondary', 'data-nav-row': 'more2' }),
         this.btn('Paramètres', () => this.push('settings'), { class: 'menu-btn secondary', 'data-nav-row': 'more2' }),
       ),
@@ -505,6 +520,14 @@ export class Menu {
         this.btn('Retour', () => this.back(), { class: 'menu-btn secondary' }),
       ),
     );
+  }
+
+  /** Lance le tutoriel, panneaux écrits avec les touches du joueur 1 (clavier ou manette). */
+  private startTutorial(): void {
+    const s = this.deps.settings.get();
+    const level = buildTutorialLevel(tutorialKeys(s, this.layoutMap));
+    this.deps.settings.update((st) => (st.tutorialSeen = true));
+    this.deps.game.startTutorial(level, TUTORIAL_CHECKPOINTS, TUTORIAL_THEME, s.playerCount);
   }
 
   /** Ce que la fiche d'une carte du workshop peut faire. */
@@ -817,7 +840,33 @@ export class Menu {
             ? this.btn('Quitter la session en ligne', () => this.deps.net.leave(), { class: 'menu-btn secondary' })
             : g.workshopMap
               ? this.btn('Retour au workshop', () => this.backToWorkshop(), { class: 'menu-btn secondary' })
-              : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
+              : g.tutorial
+                ? this.btn('Quitter le tutoriel', () => g.endCustom(), { class: 'menu-btn secondary' })
+                : this.btn('Quitter au menu', () => g.quitToMenu(), { class: 'menu-btn secondary' }),
+      ),
+    );
+  }
+
+  /** Fin du tutoriel : bravo, puis rester s'entraîner ou passer aux vraies courses. */
+  private buildTutorialComplete(): HTMLElement {
+    const g = this.deps.game;
+    const st = g.state;
+    const deaths = st.players.slice(0, st.playerCount).reduce((n, p) => n + p.deaths, 0);
+    return h(
+      'div',
+      { class: 'menu-screen' },
+      this.panel(
+        'Tutoriel terminé !',
+        h('div', { class: 'complete-time', text: formatTime(st.finishTick * DT) }),
+        h('p', { class: 'menu-sub', text: `Tu as vu toutes les bases${deaths ? ` (${deaths} mort${deaths > 1 ? 's' : ''} en route, c'est fait pour)` : ''}.` }),
+        h('p', { class: 'menu-note', text: "Tu peux rester t'entraîner sur les ateliers aussi longtemps que tu veux, ou passer aux vraies courses : Port d'Umibozu Facile est la plus douce." }),
+        this.btn("Continuer à m'entraîner", () => g.resumeAfterComplete(), { 'data-nav-default': true }),
+        this.btn(`Recommencer le tutoriel (${this.restartKeyLabel()})`, () => g.restart()),
+        this.btn('Lancer une course', () => {
+          g.endCustom();
+          this.push('race');
+        }),
+        this.btn('Quitter au menu', () => g.endCustom(), { class: 'menu-btn secondary' }),
       ),
     );
   }
@@ -825,6 +874,7 @@ export class Menu {
   /** Fin de niveau : chrono figé, récap, et les deux actions qui comptent. */
   private buildComplete(): HTMLElement {
     const g = this.deps.game;
+    if (g.tutorial) return this.buildTutorialComplete();
     const st = g.state;
     const net = g.net;
     const guest = net !== null && !net.isHost;
