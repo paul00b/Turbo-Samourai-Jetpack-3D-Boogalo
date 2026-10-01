@@ -762,6 +762,40 @@ export interface LevelSign {
   lines: readonly string[];
 }
 
+/** Bornes des panneaux d'une carte perso (éditeur, workshop). */
+export const SIGN_MAX = 40;
+export const SIGN_TITLE_MAX = 24;
+export const SIGN_LINES_MAX = 6;
+export const SIGN_LINE_MAX = 48;
+
+function cleanSignText(raw: unknown, max: number): string {
+  if (typeof raw !== 'string') return '';
+  return [...raw.normalize('NFC').replace(/[\p{C}]/gu, '').replace(/\s+/g, ' ').trim()].slice(0, max).join('').trimEnd();
+}
+
+/**
+ * Panneaux reçus (stockage, import, réseau) remis en forme : coin dans la carte (w × h tuiles),
+ * textes sans caractères de contrôle et bornés, panneaux vides retirés. Jamais d'exception.
+ */
+export function sanitizeSigns(raw: unknown, w: number, h: number): LevelSign[] {
+  if (!Array.isArray(raw)) return [];
+  const out: LevelSign[] = [];
+  for (const s of raw) {
+    if (out.length >= SIGN_MAX) break;
+    const o = s as Partial<LevelSign> | null;
+    if (!o || typeof o !== 'object') continue;
+    const x = Math.round(Number(o.x));
+    const y = Math.round(Number(o.y));
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= w || y >= h) continue;
+    const title = cleanSignText(o.title, SIGN_TITLE_MAX);
+    const lines = (Array.isArray(o.lines) ? o.lines : []).slice(0, SIGN_LINES_MAX).map((l) => cleanSignText(l, SIGN_LINE_MAX));
+    while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    if (!title && lines.length === 0) continue;
+    out.push({ x, y, title, lines });
+  }
+  return out;
+}
+
 /** Biome d'une carte : il choisit son thème (habillage, fond vivant) et la range dans le menu. */
 export type BiomeId = 'port' | 'bamboo' | 'forge';
 

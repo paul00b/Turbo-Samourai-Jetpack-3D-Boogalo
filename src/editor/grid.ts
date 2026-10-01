@@ -1,8 +1,9 @@
 /**
- * Grille éditable : les caractères du format de carte (voir src/sim/level.ts), plus les outils purs
- * (rectangle, ligne, remplissage, redimensionnement, gabarits) et l'historique annuler/refaire.
- * Aucune dépendance au DOM : testé sous Node.
+ * Grille éditable : les caractères du format de carte (voir src/sim/level.ts) et les panneaux de
+ * texte posés dessus, plus les outils purs (rectangle, ligne, remplissage, redimensionnement,
+ * gabarits) et l'historique annuler/refaire. Aucune dépendance au DOM : testé sous Node.
  */
+import type { LevelSign } from '../sim';
 
 /** Un caractère de tuile : # = ^ T . S e p F */
 export type TileChar = string;
@@ -15,6 +16,8 @@ export interface Cell {
 
 export class EditGrid {
   readonly cells: string[];
+  /** Panneaux de texte (coin haut-gauche en tuiles) : suivent l'historique comme les tuiles. */
+  signs: LevelSign[] = [];
 
   constructor(
     readonly w: number,
@@ -24,11 +27,12 @@ export class EditGrid {
     this.cells = new Array<string>(w * h).fill(fill);
   }
 
-  static fromRows(rows: readonly string[]): EditGrid {
+  static fromRows(rows: readonly string[], signs: readonly LevelSign[] = []): EditGrid {
     const h = rows.length;
     const w = rows.reduce((m, r) => Math.max(m, r.length), 0);
     const g = new EditGrid(w, h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) g.cells[y * w + x] = rows[y][x] ?? '.';
+    g.signs = cloneSigns(signs);
     return g;
   }
 
@@ -52,6 +56,7 @@ export class EditGrid {
   clone(): EditGrid {
     const g = new EditGrid(this.w, this.h);
     for (let i = 0; i < this.cells.length; i++) g.cells[i] = this.cells[i];
+    g.signs = cloneSigns(this.signs);
     return g;
   }
 
@@ -190,7 +195,15 @@ export function resized(g: EditGrid, w: number, h: number): EditGrid {
   }
   // Rangées ajoutées en haut : vide.
   for (const c of borderCells(out)) out.set(c.x, c.y, c.c);
+  // Les panneaux suivent le contenu (calé en bas à gauche) ; ceux qui sortent de la carte disparaissent.
+  out.signs = cloneSigns(g.signs)
+    .map((sg) => ({ ...sg, y: sg.y + dy }))
+    .filter((sg) => out.inside(sg.x, sg.y));
   return out;
+}
+
+export function cloneSigns(signs: readonly LevelSign[]): LevelSign[] {
+  return signs.map((sg) => ({ x: sg.x, y: sg.y, title: sg.title, lines: sg.lines.slice() }));
 }
 
 export type MapMode = 'kills' | 'race';

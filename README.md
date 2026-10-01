@@ -13,7 +13,7 @@ thèmes) ; l'ancien grey-box reste disponible pour comparer (voir [Rendu pixel](
 ```bash
 npm install          # .npmrc active legacy-peer-deps (arbre de peer deps de vitest 4 vs npm 10)
 npm run dev          # http://localhost:5173
-npm test             # 522 tests : déterminisme, rollback, physique, réseau, classement, workshop, tutoriel, éditeur, garde-fou statique, direction artistique
+npm test             # 526 tests : déterminisme, rollback, physique, réseau, classement, workshop, tutoriel, éditeur, garde-fou statique, direction artistique
 npm run build        # typecheck + build de prod dans dist/
 ```
 
@@ -199,8 +199,9 @@ joueurs, puis ses cartes : une carte = une partie.
 ## Tutoriel
 
 **Accueil → Tutoriel.** Une carte d'ateliers (`src/app/tutorial.ts`), avec ce qu'il faut faire écrit
-dans le décor, juste au-dessus de la tête : bienvenue et marche, jetpack (pas de saut : c'est lui qui
-envole), grappin, balancier, se projeter, élan + jetpack, enchaîner deux grappins, lisse ou
+dans le décor, en hauteur et en peu de mots : bienvenue et marche, jetpack (pas de saut : c'est lui
+qui envole ; le premier mur, 3 tuiles, se passe d'une poussée visée en diagonale), grappin, balancier,
+se projeter, élan + jetpack, enchaîner, lisse ou
 accrochable, tremplin, ennemi, dangers, arrivée. On y reste autant qu'on veut : l'arrivée propose de
 continuer à s'entraîner, de recommencer, ou de lancer une course.
 
@@ -370,7 +371,8 @@ ses cartes, les tester dans le vrai jeu et les exporter vers `level.ts`.
 |---|---|
 | Peindre / gommer | clic gauche / clic droit |
 | Tuiles | `1` mur accrochable, `2` lisse, `3` pics, `4` tremplin, `5` vide, `6` spawn (unique), `7` ennemi, `8` patrouille, `9` arrivée |
-| Outils | `B` pinceau, `R` rectangle, `L` ligne, `G` remplissage, `I` pipette, `M` sélection, `P` presets |
+| Outils | `B` pinceau, `R` rectangle, `L` ligne, `G` remplissage, `I` pipette, `M` sélection, `P` presets, `X` texte |
+| Texte | clic : poser un panneau ou le choisir (il s'écrit dans le panneau de droite) ; glisser : le déplacer ; clic droit ou `Suppr` : le supprimer |
 | Sélection | glisser pour sélectionner, glisser dedans pour déplacer ; `Ctrl+C` / `Ctrl+X` / `Ctrl+V` (le collage suit la souris, clic pour poser), `Suppr` vide, `Ctrl+A` tout |
 | Annuler / refaire | `Ctrl+Z` / `Ctrl+Y` (ou `Ctrl+Maj+Z`), 200 niveaux |
 | Vue | molette : zoom sur le curseur ; clic milieu ou `Espace` + glisser : déplacer ; flèches ; `+` / `-` ; `0` : cadrer ; `Maj` + molette : défiler |
@@ -382,6 +384,14 @@ clic droit pour le miroir) : lanterne, contrepoids (la tige monte jusqu'au plafo
 mural, tour crénelée (descend jusqu'au sol), stalactite, stalagmite, dents de slalom, champ de
 tremplins, tronçon de sol (sol, pics, gouffre ou tremplins, toujours posé en bas), ennemi sur
 plateforme, pont à deux voies, rampe. Ce sont les briques des cartes officielles.
+
+**Panneaux de texte** (outil **Texte**) : les mêmes que ceux du tutoriel, peints dans le décor
+derrière les tuiles, avec la police pixel du jeu ; l'éditeur les montre tels qu'en jeu. Un titre et
+jusqu'à 6 lignes de 48 caractères, 40 panneaux par carte, boutons pour les flèches et le ♥ ; entre
+accolades, le texte s'écrit en bleu (`{ESPACE}`). Ils suivent l'annulation et le redimensionnement,
+partent à l'export (ligne `// panneaux : […]`), au test et dans le workshop (clé `ws:s:<id>`, joués en
+ligne aussi). Hors empreinte : changer un texte ne rend ni la preuve de fin ni le classement caducs.
+Un panneau caché derrière des tuiles est signalé en conseil.
 
 **Réglages de carte** (barre du haut) : nom, mode (arcade / course), thème, largeur × hauteur
 (**Taille** redimensionne en gardant le contenu calé en bas à gauche : le sol reste le sol, les bords

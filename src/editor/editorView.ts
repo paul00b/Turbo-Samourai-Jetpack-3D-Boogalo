@@ -9,14 +9,37 @@ import type { SettingsStore } from '../io/settings';
 import type { WorkshopClient } from '../io/workshop';
 import { sanitizeMapName, type WorkshopMap } from '../net/workshopApi';
 import { NAME_MAX } from '../net/scoresApi';
+import { ART_TILE } from '../render/art/levelShape';
+import { paintSigns, signBox } from '../render/art/signs';
 import { LEVEL_THEMES, setCustomTheme } from '../render/art/themes/painters';
 import type { ThemeId } from '../render/art/themes/types';
-import { DT, encodeReplay, hashLevel, hashToHex, LEVEL_DEFS, LEVEL_INFOS, parseLevel, setCustomLevel, validateRows, type Level, type LevelIssue, type ReplayData } from '../sim';
+import { Buf } from '../render/pixel/engine';
+import {
+  DT,
+  encodeReplay,
+  hashLevel,
+  hashToHex,
+  LEVEL_DEFS,
+  LEVEL_INFOS,
+  parseLevel,
+  sanitizeSigns,
+  setCustomLevel,
+  SIGN_LINE_MAX,
+  SIGN_LINES_MAX,
+  SIGN_MAX,
+  SIGN_TITLE_MAX,
+  validateRows,
+  type Level,
+  type LevelIssue,
+  type LevelSign,
+  type ReplayData,
+} from '../sim';
 import { clear, h } from '../ui/dom';
 import { formatTime } from '../ui/hud';
 import { exportMap, importMap, type MapDoc } from './format';
 import {
   applyCells,
+  cloneSigns,
   clipCells,
   copyRect,
   EditGrid,
@@ -42,7 +65,7 @@ export interface EditorDeps {
   workshop?: WorkshopClient | null;
 }
 
-type Tool = 'brush' | 'rect' | 'line' | 'fill' | 'pick' | 'select' | 'preset';
+type Tool = 'brush' | 'rect' | 'line' | 'fill' | 'pick' | 'select' | 'preset' | 'text';
 
 interface TileDef {
   c: TileChar;
@@ -70,7 +93,14 @@ const TOOLS: readonly { id: Tool; label: string; key: string; hint: string }[] =
   { id: 'pick', label: 'Pipette', key: 'I', hint: 'Prend la tuile sous le curseur.' },
   { id: 'select', label: 'Sélection', key: 'M', hint: 'Glisser pour sélectionner ; glisser dedans pour déplacer. Ctrl+C / X / V, Suppr.' },
   { id: 'preset', label: 'Presets', key: 'P', hint: 'Choisis un preset à droite, clic pour poser, R pour le miroir.' },
+  { id: 'text', label: 'Texte', key: 'X', hint: 'Clic : poser un panneau, ou en choisir un pour l\'écrire à droite. Glisser : le déplacer. Clic droit : le supprimer.' },
 ];
+
+/** Caractères spéciaux de la police des panneaux, à insérer d'un clic. */
+const SIGN_SYMBOLS = ['←', '→', '↑', '↓', '↗', '♥', '·'];
+
+/** Tuiles qui passent devant un panneau (il est peint derrière elles). */
+const HIDES_SIGN = '#=^T';
 
 const THEME_LABEL: Record<ThemeId, string> = { port: "Port d'Umibozu", bamboo: 'Bambouseraie maudite', forge: 'Forteresse de braise' };
 
@@ -141,6 +171,14 @@ export class LevelEditor {
   private clipboard: Clip | null = null;
   /** Collage flottant : suit la souris (dx, dy = décalage du curseur dans le bloc). */
   private floating: { clip: Clip; dx: number; dy: number } | null = null;
+  /** Panneau choisi (outil Texte), indice dans grid.signs. */
+  private sign: number | null = null;
+  /** Panneau qu'on fait glisser (dx, dy = prise dans le panneau, en tuiles). */
+  private signDrag: { i: number; dx: number; dy: number; before: EditGrid; moved: boolean } | null = null;
+  /** Vrai entre la première frappe dans le formulaire du panneau et la sortie du champ : une seule étape d'annulation. */
+  private signTyping = false;
+  private signFormFor: number | null = -1;
+  private readonly signImages = new Map<string, HTMLCanvasElement>();
 
   private dirty = true;
   private raf = 0;
@@ -239,7 +277,7 @@ export class LevelEditor {
    * « Modifier » ta propre carte publiée (la copie locale reste liée : publier met à jour la version en ligne).
    */
   importWorkshop(map: WorkshopMap, asOwner: boolean): void {
-    const doc: MapDoc = { name: map.name, mode: map.mode, theme: map.theme, rows: map.rows.slice() };
+    const doc: MapDoc = { name: map.name, mode: map.mode, theme: map.theme, rows: map.rows.slice(), signs: map.signs ?? [] };
     let saved: SavedMap | null = asOwner ? this.store.byWorkshopId(map.id) : null;
     if (!saved) {
       saved = asOwner
@@ -268,10 +306,12 @@ export class LevelEditor {
 
   private setMap(map: SavedMap): void {
     this.map = map;
-    this.grid = EditGrid.fromRows(map.rows);
+    this.grid = EditGrid.fromRows(map.rows, sanitizeSigns(map.signs, map.rows[0]?.length ?? 0, map.rows.length));
     this.history.clear();
     this.selection = null;
     this.floating = null;
+    this.sign = null;
+    this.signDrag = null;
     this.store.currentId = map.id;
     this.fitView();
     this.validate();
@@ -362,11 +402,13 @@ export class LevelEditor {
     );
 
     this.el.presetForm = h('div', { class: 'ed-preset-form' });
+    this.el.signPanel = h('section', { class: 'ed-sign-panel' });
     this.el.issues = h('div', { class: 'ed-issues' });
     this.el.issuesTitle = h('h3', { class: 'ed-h' });
     const right = h(
       'aside',
       { class: 'ed-right' },
+      this.el.signPanel,
       h('h3', { class: 'ed-h', text: 'Presets' }),
       h('div', { class: 'ed-presets' }, ...presetBtns),
       this.el.presetForm,
@@ -397,10 +439,143 @@ export class LevelEditor {
     this.el.toolHint.textContent = TOOLS.find((t) => t.id === this.tool)?.hint ?? '';
     (this.el.undo as HTMLButtonElement).disabled = !this.history.canUndo;
     (this.el.redo as HTMLButtonElement).disabled = !this.history.canRedo;
+    if (this.sign !== null && this.sign >= this.grid.signs.length) this.sign = null;
+    this.renderSignForm();
     this.renderPresetForm();
     this.renderIssues();
     this.renderStatus();
     this.dirty = true;
+  }
+
+  /** Le panneau choisi, à écrire (outil Texte seulement). Pas reconstruit pendant qu'on y tape. */
+  private renderSignForm(): void {
+    const f = this.el.signPanel;
+    f.classList.toggle('hidden', this.tool !== 'text');
+    if (this.tool !== 'text') {
+      this.signFormFor = -1;
+      return;
+    }
+    if (this.signFormFor === this.sign && f.contains(document.activeElement)) return;
+    this.signFormFor = this.sign;
+    clear(f);
+    const count = `${this.grid.signs.length} / ${SIGN_MAX}`;
+    const sign = this.sign !== null ? this.grid.signs[this.sign] : null;
+    f.append(h('h3', { class: 'ed-h' }, 'Panneau', h('span', { class: 'ed-sign-count', text: count })));
+    if (!sign) {
+      f.append(h('p', { class: 'ed-hint', text: 'Clique sur la carte pour poser un panneau, ou sur un panneau pour l\'écrire. Il est peint dans le décor, derrière les tuiles.' }));
+      return;
+    }
+    const title = h('input', { class: 'ed-input ed-sign-title', type: 'text', maxlength: SIGN_TITLE_MAX, spellcheck: 'false', value: sign.title, placeholder: 'Titre (facultatif)', 'aria-label': 'Titre du panneau' }) as HTMLInputElement;
+    const body = h('textarea', { class: 'ed-input ed-sign-body', rows: SIGN_LINES_MAX, spellcheck: 'false', placeholder: 'Une ligne par ligne du panneau', 'aria-label': 'Texte du panneau' }) as HTMLTextAreaElement;
+    body.value = sign.lines.join('\n');
+    const readBody = (): string[] => {
+      const lines = body.value.split('\n');
+      const kept = lines.slice(0, SIGN_LINES_MAX).map((l) => l.slice(0, SIGN_LINE_MAX));
+      if (kept.length !== lines.length || kept.some((l, i) => l !== lines[i])) {
+        const at = body.selectionStart;
+        body.value = kept.join('\n');
+        body.selectionStart = body.selectionEnd = Math.min(at, body.value.length);
+      }
+      return kept;
+    };
+    title.addEventListener('input', () => this.editSign((sg) => (sg.title = title.value)));
+    body.addEventListener('input', () => this.editSign((sg) => (sg.lines = readBody())));
+    for (const el of [title, body]) el.addEventListener('blur', () => (this.signTyping = false));
+    let last: HTMLInputElement | HTMLTextAreaElement = body;
+    title.addEventListener('focus', () => (last = title));
+    body.addEventListener('focus', () => (last = body));
+    const symbols = SIGN_SYMBOLS.map((c) =>
+      h('button', {
+        class: 'ed-btn ed-sym',
+        type: 'button',
+        title: `Insérer ${c}`,
+        onpointerdown: (e: Event) => e.preventDefault(),
+        onclick: () => {
+          const el = last;
+          const at = el.selectionStart ?? el.value.length;
+          el.focus();
+          el.setRangeText(c, at, el.selectionEnd ?? at, 'end');
+          el.dispatchEvent(new Event('input'));
+        },
+      }, c),
+    );
+    f.append(
+      title,
+      body,
+      h('div', { class: 'ed-sign-syms' }, ...symbols),
+      h('p', { class: 'ed-hint', text: `Jusqu'à ${SIGN_LINES_MAX} lignes de ${SIGN_LINE_MAX} caractères, écrites en majuscules. Entre accolades, en bleu : {ESPACE}.` }),
+      h('div', { class: 'ed-row' }, h('button', { class: 'ed-btn danger', type: 'button', onclick: () => this.removeSign() }, 'Supprimer le panneau')),
+    );
+  }
+
+  /** Une frappe dans le formulaire du panneau : une étape d'annulation par champ, sauvegarde différée. */
+  private editSign(fn: (s: LevelSign) => void): void {
+    const i = this.sign;
+    if (i === null || !this.grid.signs[i]) return;
+    if (!this.signTyping) {
+      this.history.push(this.grid);
+      this.signTyping = true;
+    }
+    const s = this.grid.signs[i];
+    const next = { ...s, lines: s.lines.slice() };
+    fn(next);
+    this.grid.signs[i] = next;
+    this.map.signs = cloneSigns(this.grid.signs);
+    this.validate();
+    this.renderIssues();
+    (this.el.undo as HTMLButtonElement).disabled = !this.history.canUndo;
+    this.scheduleSave();
+    this.renderStatus();
+    this.dirty = true;
+  }
+
+  private removeSign(i: number | null = this.sign): void {
+    if (i === null || !this.grid.signs[i]) return;
+    this.edit(() => {
+      this.grid.signs.splice(i, 1);
+      this.sign = null;
+      return true;
+    });
+  }
+
+  /** Le panneau sous ce point (en tuiles, fractionnaire), le plus haut d'abord. */
+  private signAt(wx: number, wy: number): number | null {
+    for (let i = this.grid.signs.length - 1; i >= 0; i--) {
+      const b = signBox(this.grid.signs[i]);
+      if (wx >= b.x / ART_TILE && wx < (b.x + b.w) / ART_TILE && wy >= b.y / ART_TILE && wy < (b.y + b.h) / ART_TILE) return i;
+    }
+    return null;
+  }
+
+  /** Le panneau peint comme en jeu (même police, même cartouche), mis en cache par texte. */
+  private signImage(s: LevelSign): HTMLCanvasElement {
+    const key = JSON.stringify([s.title, s.lines]);
+    let cv = this.signImages.get(key);
+    if (cv) return cv;
+    const at0 = { ...s, x: 0, y: 0 };
+    const b = signBox(at0);
+    const buf = new Buf(Math.max(1, b.w), Math.max(1, b.h));
+    paintSigns(buf, [at0]);
+    cv = h('canvas', { width: buf.w, height: buf.h });
+    cv.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(buf.d.buffer as ArrayBuffer), buf.w, buf.h), 0, 0);
+    if (this.signImages.size > 200) this.signImages.clear();
+    this.signImages.set(key, cv);
+    return cv;
+  }
+
+  /** Conseils propres aux panneaux : un panneau caché derrière des tuiles ne se lit pas. */
+  private signIssues(): LevelIssue[] {
+    const out: LevelIssue[] = [];
+    for (const s of this.grid.signs) {
+      const b = signBox(s);
+      let hidden = false;
+      for (let y = Math.floor(b.y / ART_TILE); y <= Math.floor((b.y + b.h - 1) / ART_TILE) && !hidden; y++) {
+        for (let x = Math.floor(b.x / ART_TILE); x <= Math.floor((b.x + b.w - 1) / ART_TILE) && !hidden; x++) hidden = HIDES_SIGN.includes(this.grid.get(x, y));
+      }
+      const name = s.title.trim() || s.lines.find((l) => l.trim())?.trim() || 'sans texte';
+      if (hidden) out.push({ rule: 'sign-hidden', severity: 'warn', message: `Panneau « ${name.slice(0, 24)} » en partie caché derrière des tuiles (il est peint derrière elles).`, x: s.x, y: s.y });
+    }
+    return out;
   }
 
   private renderPresetForm(): void {
@@ -478,6 +653,7 @@ export class LevelEditor {
   private setTool(t: Tool): void {
     this.tool = t;
     if (t !== 'select') this.floating = null;
+    if (t !== 'text') this.sign = null;
     this.refreshAll();
   }
 
@@ -533,13 +709,14 @@ export class LevelEditor {
   /** Après toute modification de la grille. */
   private changed(): void {
     this.map.rows = this.grid.rows();
+    this.map.signs = cloneSigns(this.grid.signs);
     this.validate();
     this.scheduleSave();
     this.refreshAll();
   }
 
   private validate(): void {
-    this.issues = validateRows(this.grid.rows(), this.map.mode);
+    this.issues = [...validateRows(this.grid.rows(), this.map.mode), ...this.signIssues()];
   }
 
   private scheduleSave(): void {
@@ -552,6 +729,7 @@ export class LevelEditor {
     if (this.saveTimer) window.clearTimeout(this.saveTimer);
     this.saveTimer = 0;
     this.map.rows = this.grid.rows();
+    this.map.signs = cloneSigns(this.grid.signs);
     this.store.save(this.map);
     if (this.opened) this.renderStatus();
   }
@@ -565,6 +743,8 @@ export class LevelEditor {
   }
 
   private undo(): void {
+    this.signTyping = false;
+    this.signFormFor = -1;
     const g = this.history.undo(this.grid);
     if (!g) return;
     this.grid = g;
@@ -573,6 +753,8 @@ export class LevelEditor {
   }
 
   private redo(): void {
+    this.signTyping = false;
+    this.signFormFor = -1;
     const g = this.history.redo(this.grid);
     if (!g) return;
     this.grid = g;
@@ -603,6 +785,7 @@ export class LevelEditor {
       this.toast((e as Error).message);
       return;
     }
+    level.signs = this.cleanSigns();
     this.flushSave();
     setCustomLevel(level);
     setCustomTheme(this.map.theme);
@@ -751,7 +934,7 @@ export class LevelEditor {
         const map = this.map;
         const update = !asNew && map.workshopId ? map.workshopId : undefined;
         show(note('Envoi… le serveur rejoue ta partie sur ta carte.'));
-        void ws.publish({ name: map.name, mode: map.mode, theme: map.theme, rows: this.grid.rows() }, proof.replay, { id: update, parentId: update ? undefined : map.parent?.id }).then((res) => {
+        void ws.publish({ name: map.name, mode: map.mode, theme: map.theme, rows: this.grid.rows(), signs: this.cleanSigns() }, proof.replay, { id: update, parentId: update ? undefined : map.parent?.id }).then((res) => {
           if (this.map !== map || !this.modal) return;
           if (!res.ok) {
             const gone = update !== undefined && /introuvable/.test(res.error);
@@ -845,7 +1028,12 @@ export class LevelEditor {
   }
 
   private doc(): MapDoc {
-    return { name: this.map.name, mode: this.map.mode, theme: this.map.theme, rows: this.grid.rows() };
+    return { name: this.map.name, mode: this.map.mode, theme: this.map.theme, rows: this.grid.rows(), signs: this.cleanSigns() };
+  }
+
+  /** Les panneaux tels qu'ils partent (test, export, publication) : textes nettoyés, vides retirés. */
+  private cleanSigns(): LevelSign[] {
+    return sanitizeSigns(this.grid.signs, this.grid.w, this.grid.h);
   }
 
   // ------------------------------------------------------------------ vue
@@ -981,6 +1169,26 @@ export class LevelEditor {
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // Panneaux : tels qu'en jeu ; estompés hors de l'outil Texte, pour voir les tuiles dessous.
+    const textTool = this.tool === 'text';
+    ctx.imageSmoothingEnabled = false;
+    g.signs.forEach((s, i) => {
+      const b = signBox(s);
+      const px = sx(b.x / ART_TILE);
+      const py = sy(b.y / ART_TILE);
+      const pw = (b.w / ART_TILE) * z;
+      const ph = (b.h / ART_TILE) * z;
+      if (px > this.viewW || py > this.viewH || px + pw < 0 || py + ph < 0) return;
+      ctx.globalAlpha = textTool ? 1 : 0.5;
+      ctx.drawImage(this.signImage(s), px, py, pw, ph);
+      ctx.globalAlpha = 1;
+      if (textTool && i === this.sign) {
+        ctx.strokeStyle = COL.select;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px - 2, py - 2, pw + 4, ph + 4);
+      }
+    });
+
     // Aperçu de l'outil.
     const ghost = this.ghostCells();
     if (ghost.length) {
@@ -1092,6 +1300,9 @@ export class LevelEditor {
   private onDown(e: PointerEvent): void {
     if (this.modal) return;
     e.preventDefault();
+    // preventDefault garde le focus là où il était : on le reprend aux champs, sinon les raccourcis s'y tapent.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement || focused instanceof HTMLSelectElement) focused.blur();
     this.canvas.setPointerCapture(e.pointerId);
     const { sx, sy } = this.local(e);
     const t = this.tileAtScreen(sx, sy);
@@ -1154,6 +1365,33 @@ export class LevelEditor {
         this.refreshAll();
         break;
       }
+      case 'text': {
+        const hit = this.signAt(this.camX + sx / this.zoom, this.camY + sy / this.zoom);
+        if (erase) {
+          if (hit !== null) this.removeSign(hit);
+          break;
+        }
+        if (hit !== null) {
+          const s = this.grid.signs[hit];
+          this.sign = hit;
+          this.signDrag = { i: hit, dx: t.x - s.x, dy: t.y - s.y, before: this.grid.clone(), moved: false };
+          this.refreshAll();
+        } else if (this.grid.inside(t.x, t.y)) {
+          if (this.grid.signs.length >= SIGN_MAX) {
+            this.toast(`${SIGN_MAX} panneaux au plus par carte.`);
+            break;
+          }
+          this.edit(() => {
+            this.grid.signs.push({ x: t.x, y: t.y, title: 'PANNEAU', lines: ['TON TEXTE ICI'] });
+            this.sign = this.grid.signs.length - 1;
+            return true;
+          });
+          const field = this.el.signPanel.querySelector<HTMLInputElement>('.ed-sign-title');
+          field?.focus();
+          field?.select();
+        }
+        break;
+      }
       case 'preset':
         if (erase) {
           this.mirrored = !this.mirrored;
@@ -1178,6 +1416,16 @@ export class LevelEditor {
     const moved = !this.hover || this.hover.x !== t.x || this.hover.y !== t.y;
     this.hover = t;
     if (!moved) return;
+    const sd = this.signDrag;
+    if (sd && this.grid.signs[sd.i]) {
+      const s = this.grid.signs[sd.i];
+      const nx = clamp(t.x - sd.dx, 0, this.grid.w - 1);
+      const ny = clamp(t.y - sd.dy, 0, this.grid.h - 1);
+      if (nx !== s.x || ny !== s.y) {
+        this.grid.signs[sd.i] = { ...s, x: nx, y: ny };
+        sd.moved = true;
+      }
+    }
     if (d?.kind === 'paint') {
       for (const k of lineCells(d.lastX, d.lastY, t.x, t.y, d.button === 2 ? '.' : this.tile)) paint(this.grid, k.x, k.y, k.c);
       d.lastX = t.x;
@@ -1195,6 +1443,12 @@ export class LevelEditor {
     this.drag = null;
     this.canvas.classList.remove('panning');
     if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+    const sd = this.signDrag;
+    this.signDrag = null;
+    if (sd?.moved) {
+      this.history.push(sd.before);
+      this.changed();
+    }
     if (!d) return;
     const { sx, sy } = this.local(e);
     const t = this.tileAtScreen(sx, sy);
@@ -1282,6 +1536,9 @@ export class LevelEditor {
       case 'KeyP':
         this.setTool('preset');
         break;
+      case 'KeyX':
+        this.setTool('text');
+        break;
       case 'KeyT':
         this.test();
         break;
@@ -1311,13 +1568,15 @@ export class LevelEditor {
         break;
       case 'Delete':
       case 'Backspace':
-        if (this.selection) {
+        if (this.tool === 'text' && this.sign !== null) this.removeSign();
+        else if (this.selection) {
           const s = normRect(this.selection);
           this.edit(() => applyCells(this.grid, rectCells(s.x0, s.y0, s.x1, s.y1, '.')));
         }
         break;
       case 'Escape':
-        if (this.floating) this.floating = null;
+        if (this.sign !== null) this.sign = null;
+        else if (this.floating) this.floating = null;
         else if (this.selection) this.selection = null;
         else if (this.drag) this.drag = null;
         this.refreshAll();

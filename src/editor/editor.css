@@ -154,6 +154,22 @@ select.ed-input { padding: 4px 6px; }
 .ed-field .ed-num { width: 70px; }
 .ed-mirror { font-family: var(--pixel); color: var(--text); }
 
+/* Panneau de texte (outil Texte) : écrit comme en jeu, en majuscules. */
+.ed-sign-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0 8px 8px;
+  background: #10131c;
+  border-left: 2px solid #4fd1ff;
+}
+.ed-sign-count { float: right; color: var(--muted); font-size: 11px; }
+.ed-sign-title,
+.ed-sign-body { width: 100%; box-sizing: border-box; font-family: var(--pixel); text-transform: uppercase; letter-spacing: 0.03em; }
+.ed-sign-body { resize: vertical; line-height: 1.35; white-space: pre; overflow-x: auto; user-select: text; }
+.ed-sign-syms { display: flex; flex-wrap: wrap; gap: 3px; }
+.ed-sym { min-width: 26px; padding: 2px 4px; }
+
 .ed-issues { display: flex; flex-direction: column; gap: 3px; }
 .ed-issue {
   display: flex;

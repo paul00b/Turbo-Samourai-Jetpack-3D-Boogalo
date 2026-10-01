@@ -198,6 +198,23 @@ describe('handler /api/workshop : publication', () => {
     expect(board.me?.rank).toBe(1);
   });
 
+  it('les panneaux voyagent avec la carte, nettoyés, sans toucher à son empreinte ni à son classement', async () => {
+    const d = deps();
+    const m = { ...doc(), signs: [{ x: 4, y: 3, title: ' Bienvenue\u0000 ', lines: ['MARCHE →'] }, { x: 99, y: 3, title: 'HORS CARTE', lines: [] }] };
+    const res = await publish(d, 1, m);
+    expect(res.map.hash).toBe(hashToHex(hashLevel(level(m))));
+    const full = (await get(d, `id=${res.map.id}`)).body as WorkshopGetResult;
+    expect(full.map.signs).toEqual([{ x: 4, y: 3, title: 'Bienvenue', lines: ['MARCHE →'] }]);
+    // Republier en ne changeant que le texte : même empreinte, classement gardé.
+    const again = await publish(d, 1, { ...m, signs: [] }, { id: res.map.id });
+    expect(again.map.version).toBe(2);
+    expect(again.map.hash).toBe(res.map.hash);
+    const plain = (await get(d, `id=${res.map.id}`)).body as WorkshopGetResult;
+    expect(plain.map.signs).toBeUndefined();
+    const board = (await get(d, `board=${res.map.id}`)).body as WorkshopBoardResult;
+    expect(board.top).toHaveLength(1);
+  });
+
   it('sans preuve, avec la preuve d\'une autre carte ou une preuve coupée : refusé', async () => {
     const d = deps();
     const m = doc();
@@ -383,6 +400,19 @@ describe('store Upstash du workshop', () => {
     expect(await s.addPlay(rec, uuid(2))).toBe(7);
     expect(sent[0][0]).toEqual(['SET', `ws:pl:abcdefghjk:${uuid(2)}`, 1, 'NX', 'EX', 3600]);
     expect(sent[1][0]).toEqual(['HGET', 'ws:plays', 'abcdefghjk']);
+
+    // Panneaux : une clé à part, effacée quand il n'y en a plus.
+    sent.length = 0;
+    const signs = [{ x: 1, y: 2, title: 'T', lines: ['L'] }];
+    await s.save(rec, ['##', '..'], signs);
+    expect(sent[1].map((c) => c.join(' '))).toContain(`SET ws:s:abcdefghjk ${JSON.stringify(signs)}`);
+    sent.length = 0;
+    await s.save(rec, ['##', '..']);
+    expect(sent[1].map((c) => c.join(' '))).toContain('DEL ws:s:abcdefghjk');
+    replies.push([JSON.stringify(signs)]);
+    expect(await s.signs('abcdefghjk')).toEqual(signs);
+    replies.push(['pas du json']);
+    expect(await s.signs('abcdefghjk')).toEqual([]);
   });
 });
 
@@ -443,6 +473,14 @@ describe('dans le jeu', () => {
     expect(game.recorder.unranked).toBe('players');
     game.endCustom();
     setCustomLevel(null);
+  });
+
+  it('une carte du workshop jouée pose ses panneaux dans le décor', () => {
+    const { game } = makeStubGame({ playerCount: 1 });
+    const signs = [{ x: 4, y: 3, title: 'ICI', lines: ['→'] }];
+    expect(game.startWorkshop({ ...wsMap(), signs }, 1)).toBe(true);
+    expect(getCustomLevel()?.signs).toEqual(signs);
+    game.endCustom();
   });
 
   it("une carte abîmée (empreinte différente) ne se joue pas", () => {

@@ -4,6 +4,7 @@
  * L'import accepte cet export, un bloc de level.ts, ou les lignes brutes de la carte. Pur.
  */
 import type { ThemeId } from '../render/art/themes/types';
+import { sanitizeSigns, type LevelSign } from '../sim';
 import type { MapMode } from './grid';
 
 export interface MapDoc {
@@ -11,6 +12,8 @@ export interface MapDoc {
   mode: MapMode;
   theme: ThemeId;
   rows: string[];
+  /** Panneaux de texte posés dans le décor (absents des anciennes cartes). */
+  signs?: LevelSign[];
 }
 
 const THEMES: readonly ThemeId[] = ['port', 'bamboo', 'forge'];
@@ -39,6 +42,7 @@ export function exportMap(doc: MapDoc): string {
     '// Entrée de LEVEL_DEFS :',
     `// { name: ${quote(doc.name)}, mode: '${doc.mode}', subtitle: '', rows: ${c}, labels: [] },`,
     `// thème : ${doc.theme}`,
+    ...(doc.signs?.length ? [`// panneaux : ${JSON.stringify(doc.signs)}`] : []),
     '',
   ].join('\n');
 }
@@ -77,5 +81,14 @@ export function importMap(text: string, fallback: Omit<MapDoc, 'rows'>): ImportR
   else mode = rows.some((r) => r.includes('F')) ? 'race' : 'kills';
   const themeMatch = all.match(/thème\s*:?\s*(port|bamboo|forge)/);
   const theme = themeMatch && THEMES.includes(themeMatch[1] as ThemeId) ? (themeMatch[1] as ThemeId) : fallback.theme;
-  return { ok: true, doc: { name, mode, theme, rows } };
+  let signs: LevelSign[] = [];
+  const signsMatch = all.match(/^\s*\/\/\s*panneaux\s*:\s*(\[.*\])\s*$/m);
+  if (signsMatch) {
+    try {
+      signs = sanitizeSigns(JSON.parse(signsMatch[1]), w, rows.length);
+    } catch {
+      /* panneaux illisibles : la carte s'importe sans eux */
+    }
+  }
+  return { ok: true, doc: { name, mode, theme, rows, signs } };
 }

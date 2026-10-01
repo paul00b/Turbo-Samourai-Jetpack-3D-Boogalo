@@ -12,6 +12,7 @@ import {
   hashToHex,
   makeInput,
   parseLevel,
+  sanitizeSigns,
   setCustomLevel,
   StateHistory,
   step,
@@ -63,6 +64,7 @@ export function useWorkshopLevel(map: WorkshopMap): boolean {
     return false;
   }
   if (hashToHex(hashLevel(level)) !== map.hash) return false;
+  level.signs = sanitizeSigns(map.signs, map.rows[0]?.length ?? 0, map.rows.length);
   setCustomLevel(level);
   setCustomTheme(map.theme);
   return true;

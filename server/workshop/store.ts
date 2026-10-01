@@ -1,10 +1,10 @@
 /**
- * Stockage du workshop. Une carte = sa fiche (WorkshopRecord) et ses lignes, rangées à part : les
- * listes ne lisent que les fiches. Listes : récentes (date de mise à jour) et populaires (parties),
+ * Stockage du workshop. Une carte = sa fiche (WorkshopRecord), ses lignes et ses panneaux, rangés à
+ * part : les listes ne lisent que les fiches. Listes : récentes (date de mise à jour) et populaires (parties),
  * pour tous les modes et par mode. Les pseudos et les classements vivent dans le ScoreStore.
  */
 import type { WorkshopModeFilter, WorkshopParent, WorkshopTheme } from '../../src/net/workshopApi';
-import type { LevelMode } from '../../src/sim';
+import type { LevelMode, LevelSign } from '../../src/sim';
 
 /** La fiche d'une carte publiée, telle que le serveur la garde (authorId ne sort jamais). */
 export interface WorkshopRecord {
@@ -30,11 +30,13 @@ export type ListSort = 'recent' | 'popular';
 
 export interface WorkshopStore {
   /** Crée ou remplace une carte, et la range dans les listes (sauf si elle est cachée). */
-  save(rec: WorkshopRecord, rows: string[]): Promise<void>;
+  save(rec: WorkshopRecord, rows: string[], signs?: readonly LevelSign[]): Promise<void>;
   meta(id: string): Promise<WorkshopRecord | null>;
   metas(ids: string[]): Promise<(WorkshopRecord | null)[]>;
   rows(id: string): Promise<string[] | null>;
-  /** Supprime la carte, ses lignes, ses compteurs et sa place dans les listes. */
+  /** Panneaux de la carte (vide s'il n'y en a pas). */
+  signs(id: string): Promise<LevelSign[]>;
+  /** Supprime la carte, ses lignes, ses panneaux, ses compteurs et sa place dans les listes. */
   remove(rec: WorkshopRecord): Promise<void>;
   /** Une page d'ids (plus récents ou plus joués d'abord) et le total de la liste. */
   list(sort: ListSort, mode: WorkshopModeFilter, offset: number, count: number): Promise<{ ids: string[]; total: number }>;
@@ -56,15 +58,17 @@ export const PLAY_DEDUPE_SEC = 3600;
 export class MemoryWorkshopStore implements WorkshopStore {
   private readonly recs = new Map<string, WorkshopRecord>();
   private readonly rowMap = new Map<string, string[]>();
+  private readonly signMap = new Map<string, LevelSign[]>();
   private readonly playCount = new Map<string, number>();
   private readonly played = new Map<string, number>();
   private readonly reports = new Map<string, Set<string>>();
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
-  async save(rec: WorkshopRecord, rows: string[]): Promise<void> {
+  async save(rec: WorkshopRecord, rows: string[], signs: readonly LevelSign[] = []): Promise<void> {
     this.recs.set(rec.id, { ...rec, thumb: rec.thumb.slice(), parent: rec.parent ? { ...rec.parent } : null });
     this.rowMap.set(rec.id, rows.slice());
+    this.signMap.set(rec.id, structuredClone([...signs]));
     if (!this.playCount.has(rec.id)) this.playCount.set(rec.id, 0);
   }
 
@@ -81,9 +85,14 @@ export class MemoryWorkshopStore implements WorkshopStore {
     return this.rowMap.get(id)?.slice() ?? null;
   }
 
+  async signs(id: string): Promise<LevelSign[]> {
+    return structuredClone(this.signMap.get(id) ?? []);
+  }
+
   async remove(rec: WorkshopRecord): Promise<void> {
     this.recs.delete(rec.id);
     this.rowMap.delete(rec.id);
+    this.signMap.delete(rec.id);
     this.playCount.delete(rec.id);
     this.reports.delete(rec.id);
   }

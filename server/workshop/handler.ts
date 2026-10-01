@@ -152,10 +152,10 @@ export async function handleWorkshop(req: WorkshopRequest, deps: WorkshopDeps): 
       if (q.has('id')) {
         const rec = await visible(deps, q.get('id'), viewer);
         if (!rec) return fail(404, 'carte introuvable (supprimée ?)');
-        const rows = await ws.rows(rec.id);
+        const [rows, signs] = await Promise.all([ws.rows(rec.id), ws.signs(rec.id)]);
         if (!rows) return fail(404, 'carte introuvable (supprimée ?)');
         const [summary] = await summaries(deps, [rec], viewer);
-        return { status: 200, body: { ok: true, map: { ...summary, rows } } satisfies WorkshopGetResult };
+        return { status: 200, body: { ok: true, map: { ...summary, rows, ...(signs.length ? { signs } : {}) } } satisfies WorkshopGetResult };
       }
 
       if (q.has('board')) {
@@ -304,7 +304,7 @@ async function publish(deps: WorkshopDeps, body: Record<string, unknown>, player
     thumb: makeThumb(doc.rows),
     hidden: prev?.hidden ?? false,
   };
-  await ws.save(rec, doc.rows);
+  await ws.save(rec, doc.rows, doc.signs);
   // Géométrie changée : l'ancien classement ne vaut plus rien.
   if (prev && prev.hash !== hash) await scores.drop(workshopBoardKey(prev.id, prev.hash));
   // Le temps de l'auteur ouvre le classement de sa carte.

@@ -1,12 +1,14 @@
 /**
  * Workshop sur Upstash Redis (même base et même API REST que le classement) :
  *   - `ws:m:<id>` : la fiche (JSON) ; `ws:r:<id>` : les lignes, jointes par des retours à la ligne ;
+ *   - `ws:s:<id>` : les panneaux (JSON), absent s'il n'y en a pas ;
  *   - `ws:recent:<all|race|kills>` : sorted sets, score = date de mise à jour ;
  *   - `ws:pop:<all|race|kills>` : sorted sets, score = parties ; `ws:plays` : hash id -> parties ;
  *   - `ws:by:<playerId>` : set des cartes d'un auteur ; `ws:rep:<id>` : set des joueurs qui ont signalé ;
  *   - `ws:pl:<id>:<playerId>` : « déjà compté », avec expiration.
  */
 import type { WorkshopModeFilter } from '../../src/net/workshopApi';
+import type { LevelSign } from '../../src/sim';
 import { PLAY_DEDUPE_SEC, type ListSort, type WorkshopRecord, type WorkshopStore } from './store';
 
 type Cmd = (string | number)[];
@@ -29,12 +31,13 @@ function parseRecord(v: unknown): WorkshopRecord | null {
 export class UpstashWorkshopStore implements WorkshopStore {
   constructor(private readonly exec: Pipeline) {}
 
-  async save(rec: WorkshopRecord, rows: string[]): Promise<void> {
+  async save(rec: WorkshopRecord, rows: string[], signs: readonly LevelSign[] = []): Promise<void> {
     const [prev] = await this.exec([['HGET', 'ws:plays', rec.id]]);
     const plays = Number(prev ?? 0) || 0;
     const cmds: Cmd[] = [
       ['SET', `ws:m:${rec.id}`, JSON.stringify(rec)],
       ['SET', `ws:r:${rec.id}`, rows.join('\n')],
+      signs.length ? ['SET', `ws:s:${rec.id}`, JSON.stringify(signs)] : ['DEL', `ws:s:${rec.id}`],
       ['SADD', `ws:by:${rec.authorId}`, rec.id],
       ['HSETNX', 'ws:plays', rec.id, 0],
       ...unlist(rec.id),
@@ -62,9 +65,20 @@ export class UpstashWorkshopStore implements WorkshopStore {
     return typeof v === 'string' && v.length > 0 ? v.split('\n') : null;
   }
 
+  async signs(id: string): Promise<LevelSign[]> {
+    const [v] = await this.exec([['GET', `ws:s:${id}`]]);
+    if (typeof v !== 'string') return [];
+    try {
+      const list = JSON.parse(v) as unknown;
+      return Array.isArray(list) ? (list as LevelSign[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
   async remove(rec: WorkshopRecord): Promise<void> {
     await this.exec([
-      ['DEL', `ws:m:${rec.id}`, `ws:r:${rec.id}`, `ws:rep:${rec.id}`],
+      ['DEL', `ws:m:${rec.id}`, `ws:r:${rec.id}`, `ws:s:${rec.id}`, `ws:rep:${rec.id}`],
       ['HDEL', 'ws:plays', rec.id],
       ['SREM', `ws:by:${rec.authorId}`, rec.id],
       ...unlist(rec.id),

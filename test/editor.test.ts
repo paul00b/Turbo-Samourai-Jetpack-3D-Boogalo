@@ -5,7 +5,11 @@ import {
   getLevel,
   makeInput,
   parseLevel,
+  sanitizeSigns,
   setCustomLevel,
+  SIGN_LINE_MAX,
+  SIGN_LINES_MAX,
+  SIGN_MAX,
   step,
   validateRows,
   type SimEvent,
@@ -102,6 +106,47 @@ describe('grille de l\'éditeur', () => {
     expect(validateRows(smaller.rows(), 'kills').filter((i) => i.rule === 'border' || i.rule === 'floor')).toEqual([]);
   });
 
+  it('les panneaux suivent l\'historique et le redimensionnement', () => {
+    const g = templateGrid('kills', 40, 24);
+    g.signs = [{ x: 3, y: 2, title: 'HAUT', lines: [] }, { x: 5, y: 20, title: 'BAS', lines: ['SOL'] }];
+    const h = new History();
+    h.push(g);
+    const edited = g.clone();
+    edited.signs[0] = { ...edited.signs[0], title: 'NOUVEAU' };
+    edited.signs.push({ x: 9, y: 9, title: 'X', lines: [] });
+    const back = h.undo(edited)!;
+    expect(back.signs.map((s) => s.title)).toEqual(['HAUT', 'BAS']);
+    expect(h.redo(back)!.signs.map((s) => s.title)).toEqual(['NOUVEAU', 'BAS', 'X']);
+    // Calés en bas à gauche, comme les tuiles ; ce qui sort de la carte disparaît.
+    expect(resized(g, 40, 30).signs.map((s) => s.y)).toEqual([8, 26]);
+    expect(resized(g, 40, 20).signs).toEqual([{ x: 5, y: 16, title: 'BAS', lines: ['SOL'] }]);
+    expect(resized(g, 4 + 20, 24).signs).toHaveLength(2);
+    expect(g.signs[0].title).toBe('HAUT'); // l'original n'a pas bougé
+  });
+
+  it('panneaux reçus remis en forme, jamais d\'exception', () => {
+    expect(sanitizeSigns(undefined, 10, 10)).toEqual([]);
+    expect(sanitizeSigns('x', 10, 10)).toEqual([]);
+    const long = 'A'.repeat(SIGN_LINE_MAX + 10);
+    const out = sanitizeSigns(
+      [
+        { x: 2.4, y: 3, title: '  Salut\u0007  à   toi ', lines: [long, ...Array(SIGN_LINES_MAX + 3).fill('L')] },
+        { x: 50, y: 3, title: 'hors carte', lines: [] },
+        { x: 1, y: 1, title: '', lines: ['', '  '] },
+        { x: 'a', y: 1, title: 'X', lines: [] },
+        null,
+        { x: 1, y: 2, title: 'FIN', lines: ['A', '', ''] },
+      ],
+      10,
+      10,
+    );
+    expect(out).toEqual([
+      { x: 2, y: 3, title: 'Salut à toi', lines: ['A'.repeat(SIGN_LINE_MAX), ...Array(SIGN_LINES_MAX - 1).fill('L')] },
+      { x: 1, y: 2, title: 'FIN', lines: ['A'] },
+    ]);
+    expect(sanitizeSigns(Array.from({ length: SIGN_MAX + 5 }, () => ({ x: 0, y: 0, title: 'T', lines: [] })), 10, 10)).toHaveLength(SIGN_MAX);
+  });
+
   it('les gabarits de nouvelle carte sont jouables et propres', () => {
     for (const mode of ['kills', 'race'] as const) {
       const g = templateGrid(mode);
@@ -157,13 +202,18 @@ describe('presets', () => {
 describe('export / import', () => {
   const rows = templateGrid('race', 60, 24).rows();
 
-  it('aller-retour sans perte, métadonnées comprises', () => {
-    const text = exportMap({ name: "L'Échelle d'or", mode: 'race', theme: 'bamboo', rows });
+  it('aller-retour sans perte, métadonnées et panneaux compris', () => {
+    const signs = [{ x: 4, y: 3, title: 'ICI', lines: ["L'ÉCHELLE →", 'MAINTIENS {ESPACE}'] }];
+    const text = exportMap({ name: "L'Échelle d'or", mode: 'race', theme: 'bamboo', rows, signs });
     expect(text).toContain("const MAP_L_ECHELLE_D_OR: readonly string[] = [");
     const r = importMap(text, { name: 'x', mode: 'kills', theme: 'port' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.doc).toEqual({ name: "L'Échelle d'or", mode: 'race', theme: 'bamboo', rows });
+    expect(r.doc).toEqual({ name: "L'Échelle d'or", mode: 'race', theme: 'bamboo', rows, signs });
+    // Sans panneaux : rien de plus dans l'export.
+    const plain = exportMap({ name: 'Nue', mode: 'race', theme: 'port', rows });
+    expect(plain).not.toContain('panneaux');
+    expect(importMap(plain, { name: 'x', mode: 'kills', theme: 'port' })).toMatchObject({ ok: true, doc: { signs: [] } });
   });
 
   it('importe un bloc de level.ts et des lignes brutes', () => {

@@ -4,13 +4,13 @@
  * Pur, sans DOM.
  *
  *   GET  ?list=recent|popular|mine[&mode=all|race|kills][&offset=n][&playerId=…]
- *   GET  ?id=<id>[&playerId=…]            -> la carte complète (lignes comprises)
+ *   GET  ?id=<id>[&playerId=…]            -> la carte complète (lignes et panneaux compris)
  *   GET  ?board=<id>[&playerId=…]         -> top 10 de la carte
  *   POST { action: 'publish', … }         -> publie (ou republie) avec la preuve de fin
  *   POST { action: 'score', … }           -> temps sur une carte du workshop (rejoué)
  *   POST { action: 'play' | 'report' | 'delete', id, playerId[, adminKey] }
  */
-import { TILE_CHARS, validateRows, type LevelMode } from '../sim';
+import { sanitizeSigns, TILE_CHARS, validateRows, type LevelMode, type LevelSign } from '../sim';
 import type { BoardView } from './scoresApi';
 
 export type WorkshopTheme = 'port' | 'bamboo' | 'forge';
@@ -41,6 +41,8 @@ export interface WorkshopDoc {
   mode: LevelMode;
   theme: WorkshopTheme;
   rows: string[];
+  /** Panneaux de texte du décor (facultatifs) : rendu seulement, hors empreinte. */
+  signs?: LevelSign[];
 }
 
 /** La carte d'origine, pour une copie modifiée puis republiée. */
@@ -78,6 +80,8 @@ export interface WorkshopSummary {
 
 export interface WorkshopMap extends WorkshopSummary {
   rows: string[];
+  /** Absent des cartes publiées avant les panneaux. */
+  signs?: LevelSign[];
 }
 
 export interface WorkshopListResult {
@@ -146,7 +150,8 @@ export function sanitizeMapName(raw: unknown): string | null {
 export type DocCheck = { ok: true; doc: WorkshopDoc } | { ok: false; error: string };
 
 /**
- * Contrôle d'une carte envoyée : forme, tailles, caractères, nom, mode, thème, et les règles
+ * Contrôle d'une carte envoyée : forme, tailles, caractères, nom, mode, thème, panneaux (remis en
+ * forme, jamais refusés), et les règles
  * bloquantes de l'éditeur (spawn, arrivée accessible, ennemis en arcade…). Les conseils de design
  * (avertissements) ne bloquent pas : la preuve de fin dit le reste.
  */
@@ -167,7 +172,8 @@ export function checkDoc(raw: unknown): DocCheck {
   }
   const blocking = validateRows(rows, o.mode).find((i) => i.severity === 'error');
   if (blocking) return { ok: false, error: blocking.message };
-  return { ok: true, doc: { name, mode: o.mode, theme: o.theme as WorkshopTheme, rows: rows.slice() } };
+  const signs = sanitizeSigns(o.signs, w, rows.length);
+  return { ok: true, doc: { name, mode: o.mode, theme: o.theme as WorkshopTheme, rows: rows.slice(), signs } };
 }
 
 /**

@@ -3,7 +3,7 @@
  * privée ou stockage bloqué = l'éditeur marche quand même, sans mémoire.
  */
 import type { MapDoc } from './format';
-import type { MapMode } from './grid';
+import { cloneSigns, type MapMode } from './grid';
 import type { ThemeId } from '../render/art/themes/types';
 import type { WorkshopParent } from '../net/workshopApi';
 
@@ -83,7 +83,7 @@ export class EditorStore {
   }
 
   create(doc: MapDoc, extra: Pick<SavedMap, 'workshopId' | 'parent'> = {}): SavedMap {
-    const map: SavedMap = { name: doc.name, mode: doc.mode, theme: doc.theme, rows: doc.rows.slice(), ...extra, id: newId(), updated: Date.now() };
+    const map: SavedMap = { name: doc.name, mode: doc.mode, theme: doc.theme, rows: doc.rows.slice(), signs: cloneSigns(doc.signs ?? []), ...extra, id: newId(), updated: Date.now() };
     this.save(map);
     return map;
   }

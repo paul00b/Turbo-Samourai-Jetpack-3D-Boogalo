@@ -68,7 +68,7 @@ function dateFr(ms: number): string {
 /** Le fichier de la carte : l'export de l'éditeur (réimportable tel quel), avec d'où elle vient. */
 export function workshopFile(map: WorkshopMap): { name: string; text: string } {
   const head = `// Workshop Turbo-Samouraï : « ${map.name} » par ${map.author} (id ${map.id}, version ${map.version})\n`;
-  const text = head + exportMap({ name: map.name, mode: map.mode, theme: map.theme, rows: map.rows });
+  const text = head + exportMap({ name: map.name, mode: map.mode, theme: map.theme, rows: map.rows, signs: map.signs });
   return { name: `${constName(map.name).slice(4).toLowerCase() || 'carte'}.txt`, text };
 }
 
